@@ -1,0 +1,2055 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QuickShip — Honey Touch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;600&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --bg: #fafaf7;
+    --surface: #ffffff;
+    --surface-2: #f4f3ee;
+    --ink: #1a1a1a;
+    --ink-2: #4a4a48;
+    --ink-3: #8a8a87;
+    --line: #e6e4dc;
+    --line-2: #d4d1c5;
+    --accent: #c7411a;
+    --accent-soft: #f5e6dd;
+    --green: #3d7a3d;
+    --green-soft: #e3efe0;
+    --amber: #b87a1f;
+    --amber-soft: #f5ead2;
+    --red: #b03030;
+    --red-soft: #f5dcdc;
+    --grey: #6b6864;
+    --grey-soft: #ececeb;
+    --shadow-sm: 0 1px 2px rgba(20,15,5,0.04);
+    --shadow-md: 0 4px 16px rgba(20,15,5,0.06);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  .mono{font-family:'JetBrains Mono', monospace;}
+  .serif{font-family:'Fraunces', Georgia, serif;}
+
+  /* ===== Top bar ===== */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding: 14px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    position:sticky;top:0;z-index:50;
+  }
+  .brand{display:flex;align-items:baseline;gap:10px}
+  .brand .logo{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:22px;
+    letter-spacing:-0.02em;
+  }
+  .brand .logo .accent{color: var(--accent); font-style:italic;}
+  .brand .ver{
+    font-family:'JetBrains Mono',monospace;
+    font-size:10px;
+    color:var(--ink-3);
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    padding: 2px 6px;
+    background: var(--surface-2);
+    border-radius: 3px;
+  }
+  .auth-cluster{display:flex;align-items:center;gap:10px}
+  .sync-pill{
+    display:flex;align-items:center;gap:8px;
+    padding: 6px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .sync-pill .dot{width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
+  .sync-pill.connected .dot{background:var(--green);box-shadow:0 0 0 3px var(--green-soft)}
+  .sync-pill.error .dot{background:var(--red)}
+
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;
+    padding: 8px 14px;
+    background: var(--ink);
+    color: var(--bg);
+    border:none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor:pointer;
+    transition: all 0.15s ease;
+  }
+  .btn:hover{background:#000;transform:translateY(-1px)}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+  .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line-2)}
+  .btn.ghost:hover{background:var(--surface-2);transform:none}
+  .btn.accent{background:var(--accent)}
+  .btn.accent:hover{background:#a83515}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn.lg{padding:12px 22px;font-size:14px}
+
+  /* ===== Workspace ===== */
+  .workspace{padding: 24px; max-width: 1400px; margin: 0 auto;}
+
+  /* ===== Step block ===== */
+  .step{
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .step-header{
+    display:flex;align-items:center;gap:10px;
+    margin-bottom: 12px;
+  }
+  .step-num{
+    width: 24px; height: 24px;
+    background: var(--ink);
+    color: var(--bg);
+    border-radius: 50%;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono',monospace;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .step.done .step-num{background:var(--green)}
+  .step-title{
+    font-family:'Fraunces',serif;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    flex: 1;
+  }
+  .step-meta{
+    font-size: 12px;
+    color: var(--ink-3);
+    font-family:'JetBrains Mono',monospace;
+  }
+
+  /* ===== Upload zones ===== */
+  .upload-row{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .drop-zone{
+    border: 1.5px dashed var(--line-2);
+    border-radius: 8px;
+    padding: 28px 16px;
+    text-align:center;
+    background: var(--bg);
+    transition: all 0.2s ease;
+    cursor:pointer;
+  }
+  .drop-zone:hover, .drop-zone.dragover{
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .drop-zone .icon{
+    font-size: 22px;
+    color: var(--ink-3);
+    margin-bottom: 6px;
+  }
+  .drop-zone .title{
+    font-family:'Fraunces',serif;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .drop-zone .hint{
+    font-size: 11px;
+    color: var(--ink-3);
+    margin-top: 2px;
+  }
+  .paste-area{
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--bg);
+    display:flex;flex-direction:column;
+  }
+  .paste-area label{
+    font-size: 11px;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .paste-area textarea{
+    flex:1;
+    min-height: 80px;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    font-family:'JetBrains Mono',monospace;
+    font-size: 11px;
+    background: var(--surface);
+    color: var(--ink);
+    resize: vertical;
+  }
+  .paste-area textarea:focus{outline:none;border-color:var(--ink)}
+  .paste-area .actions{
+    display:flex;gap:6px;
+    margin-top: 8px;
+  }
+
+  /* ===== Status banner inside step ===== */
+  .status-banner{
+    margin-top: 12px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family:'JetBrains Mono',monospace;
+    display:flex;align-items:center;gap:8px;
+  }
+  .status-banner.ok{background:var(--green-soft);color:var(--green)}
+  .status-banner.warn{background:var(--amber-soft);color:var(--amber)}
+  .status-banner.err{background:var(--red-soft);color:var(--red)}
+  .status-banner.info{background:var(--surface-2);color:var(--ink-2)}
+
+  /* ===== Table ===== */
+  .table-wrap{
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: auto;
+    max-height: 580px;
+    background: var(--surface);
+  }
+  table{width:100%;border-collapse:collapse}
+  thead{background: var(--surface-2);position:sticky;top:0;z-index:5}
+  th{
+    text-align:left;
+    padding: 10px 12px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--line);
+    white-space:nowrap;
+    background: var(--surface-2);
+  }
+  th.sortable{cursor:pointer;user-select:none}
+  th.sortable:hover{color:var(--ink)}
+  th .sort-icon{
+    display:inline-block;
+    margin-left:4px;
+    color: var(--ink-3);
+    font-size: 10px;
+  }
+  th.sortable.active .sort-icon{color: var(--accent)}
+  td{
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12.5px;
+    vertical-align: middle;
+  }
+  tbody tr:hover{background:var(--surface-2)}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr.missing-invoice{background:#fef4f4}
+  tbody tr.missing-invoice:hover{background:#fbebeb}
+  td.mono{font-family:'JetBrains Mono',monospace;font-size:11px}
+  td.truncate{
+    max-width: 180px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .badge{
+    display:inline-flex;
+    align-items:center;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 500;
+    line-height: 1.6;
+  }
+  .badge.ok{background:var(--green-soft);color:var(--green)}
+  .badge.miss{background:var(--red-soft);color:var(--red)}
+  .badge.warn{background:var(--amber-soft);color:var(--amber)}
+
+  /* ===== Summary + Generate ===== */
+  .summary-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .summary-stats{
+    display:flex;gap:18px;flex-wrap:wrap;
+    font-size: 12.5px;
+    color: var(--ink-2);
+  }
+  .summary-stats strong{
+    font-family:'Fraunces',serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-right: 4px;
+  }
+  .summary-stats .stat{
+    display:flex;
+    align-items:baseline;
+    gap: 6px;
+  }
+  .summary-stats .stat.warn strong{color: var(--red)}
+
+  /* ===== Settings modal ===== */
+  .modal-backdrop{
+    position:fixed;inset:0;
+    background: rgba(20,15,5,0.4);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display:none;
+    align-items:center;
+    justify-content:center;
+  }
+  .modal-backdrop.active{display:flex}
+  .modal{
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 26px 28px;
+    max-width: 560px;
+    width: 92%;
+    max-height: 86vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(20,15,5,0.2);
+  }
+  .modal h2{font-family:'Fraunces',serif;font-size:20px;margin-bottom:6px;font-weight:600}
+  .modal .desc{color:var(--ink-3);font-size:12.5px;margin-bottom:16px;line-height:1.6}
+  .modal-section{
+    border-top: 1px solid var(--line);
+    padding-top: 14px;
+    margin-top: 14px;
+  }
+  .modal-section h3{
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-2);
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+
+  .field-group{margin-bottom: 12px}
+  .field-group label{
+    display:block;
+    font-size: 11px;
+    color: var(--ink-2);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .field-group label .hint{
+    color: var(--ink-3);
+    font-weight: 400;
+  }
+  .field-group input{
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--line-2);
+    border-radius: 5px;
+    font-family:'JetBrains Mono',monospace;
+    font-size: 12px;
+    background: var(--surface);
+  }
+  .field-group input:focus{outline:none;border-color:var(--ink)}
+  .field-result{
+    margin-top: 4px;
+    font-size: 11px;
+    font-family:'JetBrains Mono',monospace;
+    min-height: 14px;
+  }
+  .modal .save-row{
+    display:flex;justify-content:flex-end;gap:8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    margin-top: 16px;
+  }
+
+  /* ===== Progress overlay ===== */
+  .progress-block{
+    margin-top: 16px;
+    padding: 16px;
+    background: var(--surface-2);
+    border-radius: 8px;
+    border: 1px solid var(--line);
+  }
+  .progress-block h3{
+    font-family:'Fraunces',serif;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .progress-bar{
+    height: 6px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+  .progress-bar .fill{
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+  }
+  .progress-text{
+    display:flex;justify-content:space-between;
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+  .progress-log{
+    margin-top: 10px;
+    max-height: 220px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px;
+    font-family:'JetBrains Mono',monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--ink-2);
+  }
+  .log-line.ok{color:var(--green)}
+  .log-line.err{color:var(--red)}
+  .log-line.warn{color:var(--amber)}
+
+  /* ===== Toast ===== */
+  .toast-stack{
+    position:fixed;
+    top: 70px; right: 24px;
+    z-index: 200;
+    display:flex;flex-direction:column;gap:8px;
+    pointer-events:none;
+  }
+  .toast{
+    padding: 10px 16px;
+    background: var(--ink);
+    color: var(--bg);
+    border-radius: 6px;
+    font-size: 13px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    animation: toast-in 0.25s ease;
+    pointer-events:auto;
+    max-width: 360px;
+  }
+  .toast.success{background: var(--green)}
+  .toast.error{background: var(--red)}
+  @keyframes toast-in{
+    from{opacity:0;transform:translateX(20px)}
+    to{opacity:1;transform:translateX(0)}
+  }
+
+  @media (max-width: 720px){
+    .upload-row{grid-template-columns:1fr}
+    .workspace{padding:16px}
+    .topbar{padding:12px 16px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== TOP BAR ===== -->
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">Quick<span class="accent">Ship</span></div>
+    <div class="ver">v1.0</div>
+  </div>
+  <div class="auth-cluster">
+    <div class="sync-pill" id="driveSyncPill">
+      <span class="dot"></span>
+      <span id="driveSyncText">Drive: Not connected</span>
+    </div>
+    <button class="btn ghost sm" id="connectDriveBtn">Connect Drive</button>
+    <button class="btn ghost sm" id="openSettingsBtn">⚙ Settings</button>
+  </div>
+</header>
+
+<!-- ===== WORKSPACE ===== -->
+<main class="workspace">
+
+  <!-- STEP 1: Dispatch CSV -->
+  <section class="step" id="step1">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div class="step-title">Upload dispatch CSV</div>
+      <div class="step-meta" id="dispatchMeta">no file yet</div>
+    </div>
+    <div class="upload-row">
+      <div class="drop-zone" id="dispatchDrop">
+        <div class="icon">↥</div>
+        <div class="title">Drop file or click</div>
+        <div class="hint">.csv or .tsv from your dispatch list</div>
+        <input type="file" id="dispatchFile" accept=".csv,.tsv,.txt" style="display:none" />
+      </div>
+      <div class="paste-area">
+        <label>Or paste here</label>
+        <textarea id="dispatchPaste" placeholder="Order Id&#9;Order Date&#9;...&#10;407-...&#9;12-05-2026&#9;..."></textarea>
+        <div class="actions">
+          <button class="btn ghost sm" id="dispatchParseBtn">Parse</button>
+          <button class="btn ghost sm" id="dispatchClearBtn">Clear</button>
+        </div>
+      </div>
+    </div>
+    <div id="dispatchStatus"></div>
+  </section>
+
+  <!-- STEP 2: Invoice data -->
+  <section class="step" id="step2">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div class="step-title">Upload invoice data</div>
+      <div class="step-meta" id="invoiceMeta">no file yet</div>
+    </div>
+    <div class="upload-row">
+      <div class="drop-zone" id="invoiceDrop">
+        <div class="icon">↥</div>
+        <div class="title">Drop file or click</div>
+        <div class="hint">.csv or .tsv with full invoice details</div>
+        <input type="file" id="invoiceFile" accept=".csv,.tsv,.txt" style="display:none" />
+      </div>
+      <div class="paste-area">
+        <label>Or paste here</label>
+        <textarea id="invoicePaste" placeholder="Invoice No&#9;Order No&#9;Invoice Date&#9;Consignee&#9;Address&#9;..."></textarea>
+        <div class="actions">
+          <button class="btn ghost sm" id="invoiceParseBtn">Parse</button>
+          <button class="btn ghost sm" id="invoiceClearBtn">Clear</button>
+        </div>
+      </div>
+    </div>
+    <div id="invoiceStatus"></div>
+  </section>
+
+  <!-- STEP 3: Review + Generate -->
+  <section class="step" id="step3" style="display:none">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div class="step-title">Review &amp; generate</div>
+      <div class="step-meta" id="reviewMeta">—</div>
+    </div>
+
+    <div class="table-wrap">
+      <table id="reviewTable">
+        <thead>
+          <tr>
+            <th style="width:36px">#</th>
+            <th>Order ID</th>
+            <th class="sortable" data-sort="orderDate">Order Date <span class="sort-icon">↕</span></th>
+            <th>Dispatch Date</th>
+            <th>Customer</th>
+            <th class="sortable" data-sort="sku">SKU <span class="sort-icon">↕</span></th>
+            <th>Qty</th>
+            <th>AWB</th>
+            <th>LR</th>
+            <th>Invoice</th>
+          </tr>
+        </thead>
+        <tbody id="reviewTbody"></tbody>
+      </table>
+    </div>
+
+    <div class="summary-row">
+      <div class="summary-stats">
+        <div class="stat"><strong id="statTotal">0</strong>total rows</div>
+        <div class="stat"><strong id="statReady">0</strong>labels ready</div>
+        <div class="stat"><strong id="statInvoices">0</strong>invoices to generate</div>
+        <div class="stat warn"><strong id="statMissing">0</strong>missing invoice data</div>
+      </div>
+      <button class="btn accent lg" id="generateBtn" disabled>Generate Dispatch</button>
+    </div>
+
+    <div class="progress-block" id="progressBlock" style="display:none">
+      <h3 id="progressTitle">Generating dispatch…</h3>
+      <div class="progress-bar"><div class="fill" id="progressFill" style="width:0%"></div></div>
+      <div class="progress-text">
+        <span id="progressLabel">Preparing…</span>
+        <span id="progressCount">0/0</span>
+      </div>
+      <div class="progress-log" id="progressLog"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===== SETTINGS MODAL ===== -->
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal">
+    <h2>Settings</h2>
+    <p class="desc">All credentials are stored in your own Drive folder (encrypted by Google) and cached locally in this browser. Nothing leaves your devices.</p>
+
+    <div class="modal-section">
+      <h3>Drive</h3>
+      <div class="field-group">
+        <label>QuickShip Drive folder ID <span class="hint">(create a folder in your Drive, paste the ID from the URL)</span></label>
+        <input type="text" id="cfg-drive-folder" placeholder="1AbC...xyz" />
+        <div class="field-result" id="driveFolderResult"></div>
+      </div>
+      <div class="field-group">
+        <button class="btn ghost sm" id="testDriveBtn">Test Drive access</button>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <h3>Shiprocket Cargo</h3>
+      <div class="field-group">
+        <label>Cargo email <span class="hint">(for auto token refresh)</span></label>
+        <input type="text" id="cfg-cargo-email" placeholder="login email" autocomplete="off" />
+      </div>
+      <div class="field-group">
+        <label>Cargo password <span class="hint">(for auto token refresh)</span></label>
+        <input type="password" id="cfg-cargo-password" placeholder="••••••••" autocomplete="off" />
+      </div>
+      <div class="field-group">
+        <label>Cargo API token <span class="hint">(from app-cargo.shiprocket.in → Settings → API Token)</span></label>
+        <input type="password" id="cfg-cargo-token" placeholder="JWT or 40-char hex" autocomplete="off" />
+      </div>
+      <div class="field-group">
+        <button class="btn ghost sm" id="testCargoBtn">Test Cargo</button>
+        <span class="field-result" id="cargoResult" style="margin-left:8px;display:inline-block"></span>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <h3>Proxy</h3>
+      <div class="field-group">
+        <label>TrackLens Proxy URL <span class="hint">(Cloudflare Worker, handles CORS)</span></label>
+        <input type="url" id="cfg-proxy-url" placeholder="https://tracklens-proxy.your-account.workers.dev" />
+        <div class="field-result" id="proxyResult"></div>
+      </div>
+      <div class="field-group">
+        <button class="btn ghost sm" id="testProxyBtn">Health check</button>
+      </div>
+    </div>
+
+    <div class="save-row">
+      <button class="btn ghost sm" id="closeSettingsBtn">Cancel</button>
+      <button class="btn sm" id="saveSettingsBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TOAST STACK ===== -->
+<div class="toast-stack" id="toastStack"></div>
+
+<script>
+/* =========================================================
+   QuickShip v1.0
+   Standalone CSV → labels + invoices generator for Honey Touch.
+   Reads dispatch CSV (sequence + AWBs) + invoice data CSV (full details).
+   Joins on Order ID. Generates labels via Cargo API, invoices locally.
+   Settings + creds stored in own Drive folder.
+   ========================================================= */
+
+const STORAGE_KEY = 'quickship_v1';
+const OAUTH_CLIENT_ID = '801481705797-4lr6orueunsbdk5vhhe578bga4ai6lhq.apps.googleusercontent.com';
+const DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
+
+const State = {
+  dispatchRows: [],        // parsed dispatch CSV — sequence and AWBs
+  invoiceRows: [],         // parsed invoice CSV — full details, keyed by Order ID
+  invoiceByOrderId: {},    // Map<orderId, invoiceRow> for fast join
+  sort: { col: null, dir: 'asc' },
+  settings: {
+    driveFolderId: '',
+    cargo: { email: '', password: '', token: '' },
+    proxyUrl: ''
+  },
+  drive: {
+    accessToken: null,
+    connected: false
+  }
+};
+
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+/* ------------------- Utils ------------------- */
+function toast(msg, type='info', dur=3500){
+  const stack = $('#toastStack');
+  const el = document.createElement('div');
+  el.className = 'toast ' + (type === 'info' ? '' : type);
+  el.textContent = msg;
+  stack.appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; setTimeout(()=>el.remove(),300); }, dur);
+}
+
+function escapeHtml(s){
+  if(s == null) return '';
+  return String(s).replace(/[&<>"']/g, m => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  })[m]);
+}
+
+function persistLocal(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ settings: State.settings }));
+  }catch(e){}
+}
+
+function restoreLocal(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    if(parsed.settings) Object.assign(State.settings, parsed.settings);
+  }catch(e){}
+}
+
+/* ------------------- CSV / TSV parser -------------------
+ * Auto-detects delimiter (tab vs comma). Handles quoted fields with embedded
+ * delimiters/newlines. Returns { header: string[], rows: object[] }.
+ */
+function parseDelimited(text){
+  if(!text || !text.trim()) return { header: [], rows: [] };
+  // Detect delimiter — tab beats comma if both present (the invoice CSV uses tabs)
+  const firstLine = text.split(/\r?\n/, 1)[0];
+  const delim = firstLine.includes('\t') ? '\t' : ',';
+
+  const records = parseRows(text, delim);
+  if(records.length === 0) return { header: [], rows: [] };
+
+  // Normalize header: trim, strip trailing # and ', lowercase for matching
+  const rawHeader = records[0];
+  const header = rawHeader.map(h => normalizeHeader(h));
+
+  const rows = [];
+  for(let i = 1; i < records.length; i++){
+    const r = records[i];
+    if(r.length === 1 && r[0] === '') continue; // skip blank lines
+    const obj = {};
+    for(let j = 0; j < header.length; j++){
+      obj[header[j]] = (r[j] != null ? r[j] : '').trim();
+    }
+    rows.push(obj);
+  }
+  return { header, rows };
+}
+
+function normalizeHeader(h){
+  return String(h || '')
+    .replace(/[#']/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function parseRows(text, delim){
+  const rows = [];
+  let row = [];
+  let cur = '';
+  let inQuotes = false;
+  for(let i = 0; i < text.length; i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ cur += '"'; i++; }
+        else inQuotes = false;
+      } else {
+        cur += c;
+      }
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === delim){ row.push(cur); cur = ''; }
+      else if(c === '\r'){ /* skip */ }
+      else if(c === '\n'){ row.push(cur); rows.push(row); row = []; cur = ''; }
+      else { cur += c; }
+    }
+  }
+  // Flush final cell
+  if(cur.length > 0 || row.length > 0){
+    row.push(cur);
+    rows.push(row);
+  }
+  return rows;
+}
+
+/* ------------------- Date normalisation -------------------
+ * Dispatch CSV: DD-MM-YYYY (e.g. "12-05-2026")
+ * Invoice CSV: same format
+ * Promise dates: "17-5-26 To 20-5-26" or "19-05-2026"
+ *
+ * Returns canonical YYYY-MM-DD or '' if unparseable.
+ */
+function parseDate(raw){
+  if(!raw) return '';
+  const s = String(raw).trim();
+  if(!s) return '';
+  // Try DD-MM-YYYY first (most common in these CSVs)
+  let m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if(m){
+    const dd = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    const yyyy = parseInt(m[3], 10);
+    if(mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31){
+      return `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+    }
+  }
+  // YYYY-MM-DD
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m){
+    return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+  }
+  // DD-MM-YY (short year)
+  m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
+  if(m){
+    const dd = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    const yy = parseInt(m[3], 10);
+    const yyyy = yy < 70 ? 2000 + yy : 1900 + yy;
+    if(mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31){
+      return `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+    }
+  }
+  return '';
+}
+
+/* ------------------- Dispatch CSV ingest ------------------- */
+function ingestDispatchCsv(text){
+  const { header, rows } = parseDelimited(text);
+  if(rows.length === 0){
+    setStatus('#dispatchStatus', 'err', 'No rows found. Check the file.');
+    return;
+  }
+  // Tolerate "Dispatch by Date" AND the typo "Dispathc by Date"
+  const orderIdKey   = pickHeader(header, ['order id', 'order no', 'order number']);
+  const orderDateKey = pickHeader(header, ['order date']);
+  const dispDateKey  = pickHeader(header, ['dispatch by date', 'dispathc by date', 'dispatch date']);
+  const nameKey      = pickHeader(header, ['name', 'customer', 'consignee']);
+  const qtyKey       = pickHeader(header, ['qty', 'quantity']);
+  const courierKey   = pickHeader(header, ['courier']);
+  const lrKey        = pickHeader(header, ['lr no', 'lr number', 'lr']);
+  const awbKey       = pickHeader(header, ['tracking id', 'awb', 'awb no', 'waybill']);
+  const skuKey       = pickHeader(header, ['sku']);
+  const statusKey    = pickHeader(header, ['dispatch status', 'status']);
+
+  if(!orderIdKey){
+    setStatus('#dispatchStatus', 'err', 'Could not find Order Id column. Got: ' + header.join(', '));
+    return;
+  }
+  if(!awbKey){
+    setStatus('#dispatchStatus', 'err', 'Could not find Tracking Id / AWB column. Got: ' + header.join(', '));
+    return;
+  }
+
+  const parsed = rows.map((r, idx) => ({
+    seq: idx + 1,
+    orderId: (r[orderIdKey] || '').trim(),
+    orderDate: parseDate(r[orderDateKey] || ''),
+    orderDateRaw: r[orderDateKey] || '',
+    dispatchDate: parseDate(r[dispDateKey] || ''),
+    dispatchDateRaw: r[dispDateKey] || '',
+    name: r[nameKey] || '',
+    qty: r[qtyKey] || '',
+    courier: r[courierKey] || '',
+    lr: r[lrKey] || '',
+    awb: (r[awbKey] || '').trim(),
+    sku: r[skuKey] || '',
+    status: r[statusKey] || ''
+  })).filter(r => r.orderId && r.awb);
+
+  State.dispatchRows = parsed;
+  $('#dispatchMeta').textContent = `${parsed.length} rows parsed`;
+  $('#step1').classList.add('done');
+  setStatus('#dispatchStatus', 'ok', `Parsed ${parsed.length} rows. ${parsed.filter(r => !r.awb).length === 0 ? 'All have AWBs.' : 'Some missing AWBs filtered out.'}`);
+  refreshReview();
+}
+
+function pickHeader(header, candidates){
+  for(const c of candidates){
+    if(header.includes(c)) return c;
+  }
+  return null;
+}
+
+/* ------------------- Invoice CSV ingest ------------------- */
+function ingestInvoiceCsv(text){
+  const { header, rows } = parseDelimited(text);
+  if(rows.length === 0){
+    setStatus('#invoiceStatus', 'err', 'No rows found.');
+    return;
+  }
+  const invNoKey   = pickHeader(header, ['invoice no']);
+  const orderKey   = pickHeader(header, ['order no', 'order id', 'order number']);
+  const dateKey    = pickHeader(header, ['invoice date']);
+  const nameKey    = pickHeader(header, ['consignee', 'name', 'customer']);
+  const addrKey    = pickHeader(header, ['address']);
+  const contactKey = pickHeader(header, ['contact', 'phone', 'mobile']);
+  const qtyKey     = pickHeader(header, ['qty', 'quantity']);
+  const skuKey     = pickHeader(header, ['sku']);
+  const productKey = pickHeader(header, ['product name', 'product', 'description']);
+  const priceKey   = pickHeader(header, ['unit price', 'price']);
+  const taxableKey = pickHeader(header, ['taxable']);     // first occurrence wins; column is duplicated in your CSV
+  const taxKey     = pickHeader(header, ['tax']);
+  const igstKey    = pickHeader(header, ['igst']);
+  const sgstKey    = pickHeader(header, ['sgst']);
+  const cgstKey    = pickHeader(header, ['cgst']);
+  const stateKey   = pickHeader(header, ['state']);
+  const awbKey     = pickHeader(header, ['awb', 'tracking id', 'waybill']);
+  const promiseKey = pickHeader(header, ['promise date', 'promised date']);
+
+  if(!orderKey){
+    setStatus('#invoiceStatus', 'err', 'Could not find Order No column. Got: ' + header.join(', '));
+    return;
+  }
+
+  const parsed = rows.map(r => ({
+    invoiceNo: r[invNoKey] || '',
+    orderId: (r[orderKey] || '').trim(),
+    invoiceDate: parseDate(r[dateKey] || ''),
+    invoiceDateRaw: r[dateKey] || '',
+    consignee: r[nameKey] || '',
+    address: r[addrKey] || '',
+    contact: r[contactKey] || '',
+    qty: parseFloat(r[qtyKey] || '1') || 1,
+    sku: r[skuKey] || '',
+    productName: r[productKey] || '',
+    unitPrice: parseFloat((r[priceKey] || '0').replace(/,/g,'')) || 0,
+    taxable: parseFloat((r[taxableKey] || '0').replace(/,/g,'')) || 0,
+    tax: parseFloat((r[taxKey] || '0').replace(/,/g,'')) || 0,
+    igst: parseFloat((r[igstKey] || '0').replace(/,/g,'')) || 0,
+    sgst: parseFloat((r[sgstKey] || '0').replace(/,/g,'')) || 0,
+    cgst: parseFloat((r[cgstKey] || '0').replace(/,/g,'')) || 0,
+    state: r[stateKey] || '',
+    awb: (r[awbKey] || '').trim(),
+    promiseDate: r[promiseKey] || ''
+  })).filter(r => r.orderId);
+
+  // Build lookup by Order ID. If duplicate Order IDs exist (multi-shipment),
+  // keep the first one and warn — we generate one invoice per order regardless.
+  const byOrderId = {};
+  let dupes = 0;
+  parsed.forEach(r => {
+    if(byOrderId[r.orderId]) dupes++;
+    else byOrderId[r.orderId] = r;
+  });
+
+  State.invoiceRows = parsed;
+  State.invoiceByOrderId = byOrderId;
+  $('#invoiceMeta').textContent = `${parsed.length} rows, ${Object.keys(byOrderId).length} unique orders`;
+  $('#step2').classList.add('done');
+  setStatus('#invoiceStatus', 'ok',
+    `Parsed ${parsed.length} rows · ${Object.keys(byOrderId).length} unique orders` +
+    (dupes > 0 ? ` · ${dupes} duplicate Order IDs collapsed (first row kept)` : ''));
+  refreshReview();
+}
+
+function setStatus(sel, kind, msg){
+  const el = $(sel);
+  if(!el) return;
+  el.innerHTML = `<div class="status-banner ${kind}">${escapeHtml(msg)}</div>`;
+}
+
+/* ------------------- Review table ------------------- */
+function refreshReview(){
+  const step3 = $('#step3');
+  if(State.dispatchRows.length === 0){
+    step3.style.display = 'none';
+    return;
+  }
+  step3.style.display = '';
+
+  // Sort
+  const rows = State.dispatchRows.slice();
+  if(State.sort.col){
+    rows.sort((a, b) => {
+      const av = a[State.sort.col] || '';
+      const bv = b[State.sort.col] || '';
+      if(av < bv) return State.sort.dir === 'asc' ? -1 : 1;
+      if(av > bv) return State.sort.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+
+  // Stats
+  const haveInvoice = rows.filter(r => State.invoiceByOrderId[r.orderId]);
+  const missing = rows.length - haveInvoice.length;
+  const uniqueOrders = new Set(haveInvoice.map(r => r.orderId)).size;
+
+  $('#statTotal').textContent = rows.length;
+  $('#statReady').textContent = rows.length;
+  $('#statInvoices').textContent = uniqueOrders;
+  $('#statMissing').textContent = missing;
+  $('#reviewMeta').textContent = `${rows.length} rows · ${uniqueOrders} invoices · ${missing} missing`;
+
+  // Table body
+  const tbody = $('#reviewTbody');
+  tbody.innerHTML = rows.map((r, i) => {
+    const hasInvoice = !!State.invoiceByOrderId[r.orderId];
+    const invoiceBadge = hasInvoice
+      ? `<span class="badge ok">✓ ready</span>`
+      : `<span class="badge miss" title="No matching row in invoice data">✗ no data</span>`;
+    return `<tr class="${hasInvoice ? '' : 'missing-invoice'}">
+      <td class="mono">${i + 1}</td>
+      <td class="mono">${escapeHtml(r.orderId)}</td>
+      <td class="mono">${escapeHtml(r.orderDateRaw || '—')}</td>
+      <td class="mono">${escapeHtml(r.dispatchDateRaw || '—')}</td>
+      <td class="truncate" title="${escapeHtml(r.name)}">${escapeHtml(r.name)}</td>
+      <td class="mono">${escapeHtml(r.sku || '—')}</td>
+      <td>${escapeHtml(r.qty || '1')}</td>
+      <td class="mono">${escapeHtml(r.awb)}</td>
+      <td class="mono">${escapeHtml(r.lr || '—')}</td>
+      <td>${invoiceBadge}</td>
+    </tr>`;
+  }).join('');
+
+  // Sort icons
+  $$('.sortable').forEach(th => {
+    th.classList.remove('active');
+    th.querySelector('.sort-icon').textContent = '↕';
+    if(th.dataset.sort === State.sort.col){
+      th.classList.add('active');
+      th.querySelector('.sort-icon').textContent = State.sort.dir === 'asc' ? '↑' : '↓';
+    }
+  });
+
+  // Generate button enabled if ANY rows have AWBs (labels are the must-have;
+  // invoices are best-effort — missing rows are skipped, label still fetched)
+  $('#generateBtn').disabled = rows.length === 0;
+  $('#generateBtn').textContent = `Generate Dispatch (${rows.length} labels, ${uniqueOrders} invoices)`;
+}
+
+/* ------------------- Cargo API client (ported from TrackLens) ------------------- */
+function getProxyBase(){
+  const url = State.settings.proxyUrl;
+  if(!url) throw new Error('Proxy URL not set. Open Settings.');
+  return url.replace(/\/+$/, '');
+}
+
+async function cargoFetch(path, opts = {}){
+  const base = getProxyBase();
+  const url = base + '/cargo' + path;
+  const token = State.settings.cargo.token;
+  if(!token) throw new Error('Cargo token not set. Open Settings.');
+  const isJwt = /^eyJ/.test(token);
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': isJwt ? ('Bearer ' + token) : ('token ' + token)
+  };
+  const resp = await fetch(url, {
+    method: opts.method || 'GET',
+    headers,
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
+  let data;
+  const text = await resp.text();
+  try{ data = JSON.parse(text); }catch{ data = { raw: text }; }
+
+  // Auto-refresh on 401/403 if email + password set
+  if((resp.status === 401 || resp.status === 403) && !opts._retry){
+    const email = State.settings.cargo.email;
+    const password = State.settings.cargo.password;
+    if(email && password){
+      try{
+        const authResp = await fetch(`${base}/cargo/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        if(authResp.ok){
+          const authData = await authResp.json();
+          const newToken = authData.token || authData.data?.token || authData.access;
+          if(newToken){
+            State.settings.cargo.token = newToken;
+            persistLocal();
+            if(State.drive.connected) writeDriveJSON('quickship_settings.json', State.settings).catch(()=>{});
+            return cargoFetch(path, { ...opts, _retry: true });
+          }
+        }
+      }catch(e){}
+    }
+  }
+
+  if(!resp.ok){
+    let msg = data?.detail || data?.message || data?.error || `HTTP ${resp.status}`;
+    if(typeof msg === 'object') msg = JSON.stringify(msg);
+    const err = new Error('Cargo: ' + msg);
+    err.status = resp.status;
+    err.body = data;
+    throw err;
+  }
+  return data;
+}
+
+function extractShipmentList(data){
+  if(!data) return [];
+  if(Array.isArray(data)) return data;
+  if(Array.isArray(data.data)) return data.data;
+  if(Array.isArray(data.results)) return data.results;
+  if(data.data && Array.isArray(data.data.results)) return data.data.results;
+  if(Array.isArray(data.shipments)) return data.shipments;
+  if(Array.isArray(data.items)) return data.items;
+  for(const k of Object.keys(data)){
+    if(Array.isArray(data[k])) return data[k];
+  }
+  return [];
+}
+
+async function cargoFindShipmentByAwb(awb){
+  const today = new Date();
+  const yearAgo = new Date(today.getTime() - 365 * 24 * 60 * 60 * 1000);
+  const fmt = d => d.toISOString().slice(0, 10);
+  const qs = new URLSearchParams({
+    page: '1', page_size: '10',
+    created_at_after: fmt(yearAgo),
+    created_at_before: fmt(today),
+    waybill_no: String(awb).trim(),
+    entity: 'shipment'
+  });
+  const data = await cargoFetch('/shipment-list/?' + qs.toString());
+  const list = extractShipmentList(data);
+  const awbFields = ['waybill_no','awb','awb_code','awb_number','tracking_number','tracking_id','awb_no','waybill'];
+  const match = list.find(s => awbFields.some(f => String(s[f]||'').trim() === String(awb).trim()))
+             || (list.length === 1 ? list[0] : null);
+  if(match && match.id) return { shipmentId: match.id, raw: match };
+  throw new Error(`No Cargo shipment found for AWB ${awb}`);
+}
+
+async function cargoGetShipmentDetail(shipmentId){
+  return cargoFetch(`/shipment-detail/${encodeURIComponent(shipmentId)}/?entity=shipment`);
+}
+
+async function cargoGetLabelUrlForAwb(awb){
+  const { shipmentId } = await cargoFindShipmentByAwb(awb);
+  const detail = await cargoGetShipmentDetail(shipmentId);
+  const candidates = [
+    detail.label_url, detail.shipping_label_url, detail.awb_label, detail.label,
+    detail.download_url, detail.shipping_label,
+    detail.data?.label_url, detail.data?.shipping_label_url, detail.data?.download_url
+  ].filter(Boolean);
+  if(candidates.length === 0){
+    const all = JSON.stringify(detail);
+    const m = all.match(/"(https:[^"]+\.pdf[^"]*)"/);
+    if(m) candidates.push(m[1]);
+  }
+  if(candidates.length === 0) throw new Error('No label URL in shipment detail');
+  return { labelUrl: candidates[0], shipmentId };
+}
+
+async function cargoFetchLabelBytes(awb){
+  const { labelUrl, shipmentId } = await cargoGetLabelUrlForAwb(awb);
+  const base = getProxyBase();
+  const token = State.settings.cargo.token;
+  const isJwt = /^eyJ/.test(token);
+  const authHeader = isJwt ? ('Bearer ' + token) : ('token ' + token);
+
+  let downloadProxyUrl;
+  if(labelUrl.startsWith('https://api-cargo.shiprocket.in/')){
+    const cargoPath = labelUrl.replace(/^https:\/\/api-cargo\.shiprocket\.in\/api/, '');
+    downloadProxyUrl = base + '/cargo' + cargoPath;
+  } else {
+    downloadProxyUrl = base + '/cargo/common/download_file?code=' + encodeURIComponent(labelUrl);
+  }
+  const resp = await fetch(downloadProxyUrl, {
+    method: 'GET',
+    headers: { 'Authorization': authHeader }
+  });
+  if(!resp.ok){
+    const text = await resp.text().catch(()=>'');
+    throw new Error(`Label HTTP ${resp.status}: ${text.slice(0, 100)}`);
+  }
+  return { bytes: new Uint8Array(await resp.arrayBuffer()), shipmentId };
+}
+
+async function stripAdPages(bytes, awb){
+  if(!window.PDFLib) return bytes;
+  const { PDFDocument } = PDFLib;
+  const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const totalPages = src.getPageCount();
+  if(totalPages <= 1) return bytes;
+  const keepCount = totalPages - 1;
+  const out = await PDFDocument.create();
+  const pages = await out.copyPages(src, Array.from({length: keepCount}, (_, i) => i));
+  pages.forEach(p => out.addPage(p));
+  return await out.save();
+}
+
+async function mergePdfs(byteArrays){
+  const { PDFDocument } = PDFLib;
+  const out = await PDFDocument.create();
+  for(const bytes of byteArrays){
+    const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const pages = await out.copyPages(src, src.getPageIndices());
+    pages.forEach(p => out.addPage(p));
+  }
+  return await out.save();
+}
+
+function triggerDownload(bytes, filename){
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+/* ============================================================
+ * INVOICE GENERATOR (ported from TrackLens v1.2)
+ * Uses html2canvas + jsPDF. Mirrors the InvoLens visual template.
+ * Adapted to read fields from QuickShip's invoice CSV row shape.
+ * ============================================================ */
+
+const SELLER_INFO = {
+  company:  'SABI WABI INNOVATIONS LLP',
+  addr1:    'Hissa No 1 B, Survey No.72, Rayate,',
+  addr2:    'Kalyan-murbad Road, Thane,',
+  addr3:    'MAHARASHTRA, 421301',
+  gstin:    '27AFNFS2007K1ZR',
+  state:    'MH',
+  currency: '₹',
+  payment:  '100% advance before Dispatch',
+  declaration: 'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.',
+  signatory: 'Partner',
+};
+
+const INDIAN_STATE_NAMES = {
+  'AN':'Andaman & Nicobar Islands','AP':'Andhra Pradesh','AR':'Arunachal Pradesh',
+  'AS':'Assam','BR':'Bihar','CH':'Chandigarh','CT':'Chhattisgarh',
+  'DN':'Dadra & Nagar Haveli and Daman & Diu','DL':'Delhi','GA':'Goa','GJ':'Gujarat',
+  'HR':'Haryana','HP':'Himachal Pradesh','JK':'Jammu & Kashmir','JH':'Jharkhand',
+  'KA':'Karnataka','KL':'Kerala','LA':'Ladakh','LD':'Lakshadweep',
+  'MP':'Madhya Pradesh','MH':'Maharashtra','MN':'Manipur','ML':'Meghalaya',
+  'MZ':'Mizoram','NL':'Nagaland','OD':'Odisha','PY':'Puducherry','PB':'Punjab',
+  'RJ':'Rajasthan','SK':'Sikkim','TN':'Tamil Nadu','TG':'Telangana','TR':'Tripura',
+  'UP':'Uttar Pradesh','UT':'Uttarakhand','WB':'West Bengal',
+};
+
+function getStateName(code){
+  if(!code) return '';
+  if(code.length > 3) return code;
+  return INDIAN_STATE_NAMES[code.toUpperCase()] || code;
+}
+
+function invoiceFmtDate(d){
+  if(!d) return '';
+  const dt = new Date(d);
+  if(isNaN(dt)) return d;
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${dt.getDate()} ${months[dt.getMonth()]} ${dt.getFullYear()}`;
+}
+
+function invoiceNumberToWords(n){
+  n = Math.round(n);
+  if(n===0) return 'Zero';
+  const o=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven',
+           'Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const t=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function b(x){
+    if(x<20) return o[x];
+    if(x<100) return t[Math.floor(x/10)]+(x%10?' '+o[x%10]:'');
+    return o[Math.floor(x/100)]+' Hundred'+(x%100?' '+b(x%100):'');
+  }
+  let r='';
+  const cr=Math.floor(n/10000000); n%=10000000;
+  const la=Math.floor(n/100000);   n%=100000;
+  const th=Math.floor(n/1000);     n%=1000;
+  if(cr) r+=b(cr)+' Crore ';
+  if(la) r+=b(la)+' Lakh ';
+  if(th) r+=b(th)+' Thousand ';
+  if(n)  r+=b(n);
+  return r.trim();
+}
+
+function invoiceFmt(n){
+  return Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function escapeInvoiceHtml(s){
+  if(s==null) return '';
+  return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* Build invoice HTML — same visual template as TrackLens/InvoLens.
+ * Takes a QuickShip invoice row (from invoiceByOrderId).
+ */
+function buildInvoiceHtml(row){
+  // The Unit Price column in the CSV is GST-inclusive (e.g. 6599 for ₹5592.37 taxable + ₹1006.63 tax).
+  // Total = unitPrice × qty. taxable and tax columns are per-unit values.
+  const qty = row.qty || 1;
+  const taxablePerUnit = row.taxable || 0;
+  const taxPerUnit = row.tax || 0;
+  const totalTaxable = +(taxablePerUnit * qty).toFixed(2);
+  const totalTax = +(taxPerUnit * qty).toFixed(2);
+  const total = +(totalTaxable + totalTax).toFixed(2);
+
+  const stateName = getStateName(row.state || '');
+  // Detect inter-state vs intra-state from CGST/SGST columns (intra has values there, inter is empty/zero)
+  const isInter = !((row.cgst > 0) || (row.sgst > 0));
+  const igst = isInter ? totalTax : 0;
+  const cgst = isInter ? 0 : +(totalTax / 2).toFixed(2);
+  const sgst = isInter ? 0 : +(totalTax - cgst).toFixed(2);
+
+  // Invoice number — strip leading platform prefix, use as-is if numeric
+  const invNo = row.invoiceNo && /^\d+$/.test(String(row.invoiceNo).trim())
+    ? String(row.invoiceNo).trim()
+    : (row.orderId || row.invoiceNo || '');
+
+  const invDate = invoiceFmtDate(row.invoiceDate || new Date().toISOString().slice(0,10));
+
+  // Address is one long string in the CSV — render as-is
+  const addrLine = row.address || '';
+  const phone = row.contact || '';
+
+  // Single line item (the CSV has one row per invoice)
+  const itemRows = `
+    <tr>
+      <td style="text-align:center;padding:11px 10px;font-size:11px;color:#3d2817;border-right:1px solid #e3cfa6;border-bottom:1px solid #e3cfa6;">1</td>
+      <td style="padding:11px 10px;font-size:11px;color:#3d2817;border-right:1px solid #e3cfa6;border-bottom:1px solid #e3cfa6;">
+        <div style="font-weight:600;color:#3d2817;line-height:1.4;">${escapeInvoiceHtml(row.productName || '')}</div>
+        <div style="font-style:italic;font-size:10px;color:#8a6f55;margin-top:2px;">SKU ${escapeInvoiceHtml(row.sku || '')} · HSN 9403</div>
+      </td>
+      <td style="text-align:center;padding:11px 10px;font-size:11px;color:#3d2817;border-right:1px solid #e3cfa6;border-bottom:1px solid #e3cfa6;">${qty}</td>
+      <td style="text-align:right;padding:11px 10px;font-size:11px;color:#3d2817;font-variant-numeric:tabular-nums;border-right:1px solid #e3cfa6;border-bottom:1px solid #e3cfa6;">${invoiceFmt(row.unitPrice)}</td>
+      <td style="text-align:right;padding:11px 10px;font-size:11px;color:#3d2817;font-variant-numeric:tabular-nums;border-right:1px solid #e3cfa6;border-bottom:1px solid #e3cfa6;">${invoiceFmt(totalTaxable)}</td>
+      <td style="text-align:right;padding:11px 10px;font-size:11px;color:#3d2817;font-variant-numeric:tabular-nums;border-bottom:1px solid #e3cfa6;">${invoiceFmt(total)}</td>
+    </tr>`;
+
+  const taxLines = isInter
+    ? `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 14px;border-bottom:1px solid #f3e6cc;font-size:11px;"><span style="color:#6b5340;">IGST</span><span style="font-variant-numeric:tabular-nums;color:#3d2817;font-weight:500;">${invoiceFmt(igst)}</span></div>`
+    : `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 14px;border-bottom:1px solid #f3e6cc;font-size:11px;"><span style="color:#6b5340;">CGST</span><span style="font-variant-numeric:tabular-nums;color:#3d2817;font-weight:500;">${invoiceFmt(cgst)}</span></div>
+       <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 14px;border-bottom:1px solid #f3e6cc;font-size:11px;"><span style="color:#6b5340;">SGST</span><span style="font-variant-numeric:tabular-nums;color:#3d2817;font-weight:500;">${invoiceFmt(sgst)}</span></div>`;
+
+  const awbLabel = (() => {
+    const a = String(row.awb || '');
+    if(/^[56]\d{9,}$/.test(a)) return 'TRACKING ID (BLUEDART)';
+    return 'TRACKING ID';
+  })();
+
+  const honeycombSVG = `
+    <svg style="position:absolute;top:14mm;right:14mm;width:110px;height:110px;pointer-events:none;opacity:0.55;" viewBox="0 0 110 110">
+      ${[[55,18],[82,18],[27,38],[55,38],[82,38],[27,58],[55,58],[82,58]].map(([cx,cy])=>`
+        <polygon points="${cx},${cy-12} ${cx+10},${cy-6} ${cx+10},${cy+6} ${cx},${cy+12} ${cx-10},${cy+6} ${cx-10},${cy-6}"
+                 fill="none" stroke="#c89548" stroke-width="1.4"/>`).join('')}
+    </svg>
+    <svg style="position:absolute;bottom:14mm;right:14mm;width:110px;height:110px;pointer-events:none;opacity:0.55;" viewBox="0 0 110 110">
+      ${[[27,52],[55,52],[82,52],[27,72],[55,72],[82,72],[27,92],[55,92]].map(([cx,cy])=>`
+        <polygon points="${cx},${cy-12} ${cx+10},${cy-6} ${cx+10},${cy+6} ${cx},${cy+12} ${cx-10},${cy+6} ${cx-10},${cy-6}"
+                 fill="none" stroke="#c89548" stroke-width="1.4"/>`).join('')}
+    </svg>
+    <svg style="position:absolute;bottom:14mm;left:16mm;width:60px;height:60px;pointer-events:none;" viewBox="0 0 60 60">
+      <polygon points="30,4 52,16 52,44 30,56 8,44 8,16" fill="none" stroke="#c89548" stroke-width="1.6"/>
+      <ellipse cx="30" cy="32" rx="9" ry="6" fill="#c89548"/>
+      <line x1="22" y1="29" x2="38" y2="29" stroke="#fdfbf7" stroke-width="1.2"/>
+      <line x1="22" y1="34" x2="38" y2="34" stroke="#fdfbf7" stroke-width="1.2"/>
+      <ellipse cx="22" cy="27" rx="5" ry="3" fill="#fdfbf7" opacity="0.85"/>
+      <ellipse cx="38" cy="27" rx="5" ry="3" fill="#fdfbf7" opacity="0.85"/>
+    </svg>`;
+
+  return `
+    <div style="width:210mm;min-height:297mm;padding:0;margin:0 auto;background:#fdfbf7;box-sizing:border-box;position:relative;color:#3d2817;overflow:hidden;font-family:'Inter Tight','Inter',-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;line-height:1.5;-webkit-font-smoothing:antialiased;">
+      ${honeycombSVG}
+      <div style="position:relative;padding:14mm 16mm 14mm;z-index:1;">
+
+        <!-- Header -->
+        <div style="display:grid;grid-template-columns:1.05fr 1fr 1.1fr;gap:14px;align-items:flex-start;margin-bottom:14px;">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <div style="font-family:'Fraunces',Georgia,serif;font-weight:900;font-size:32px;color:#b88838;line-height:1;letter-spacing:-0.02em;">Honey Touch</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:10.5px;color:#3d2817;padding-top:4px;">
+            <div style="display:flex;align-items:flex-start;gap:8px;">
+              <div style="width:18px;height:18px;border-radius:50%;background:#f3e6cc;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:#b88838;font-size:10px;">⌖</div>
+              <div style="line-height:1.4;"><strong style="display:block;font-weight:600;color:#3d2817;margin-bottom:1px;font-size:11px;">${SELLER_INFO.company}</strong>${SELLER_INFO.addr1}<br>${SELLER_INFO.addr2}<br>${SELLER_INFO.addr3}</div>
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-family:'Fraunces',Georgia,serif;font-weight:900;font-size:56px;color:#3d2817;line-height:0.9;letter-spacing:-0.04em;">INVOICE</div>
+            <div style="height:2px;width:110px;background:#b88838;margin:6px 0 6px auto;position:relative;">
+              <div style="position:absolute;width:8px;height:8px;background:#b88838;border-radius:50%;top:-3px;right:-4px;"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:auto 8px auto;gap:4px 8px;font-size:11px;text-align:left;justify-content:end;margin-left:auto;margin-top:8px;">
+              <div style="color:#6b5340;font-weight:500;">Invoice No.</div><div style="color:#b88838;">:</div><div style="color:#3d2817;font-weight:600;">${escapeInvoiceHtml(invNo)}</div>
+              <div style="color:#6b5340;font-weight:500;">Invoice Date</div><div style="color:#b88838;">:</div><div style="color:#3d2817;font-weight:600;">${invDate}</div>
+              <div style="color:#6b5340;font-weight:500;">Seller GSTIN</div><div style="color:#b88838;">:</div><div style="color:#3d2817;font-weight:600;">${SELLER_INFO.gstin}</div>
+              <div style="color:#6b5340;font-weight:500;">Place of Supply</div><div style="color:#b88838;">:</div><div style="color:#3d2817;font-weight:600;">${escapeInvoiceHtml(stateName)}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bill To -->
+        <div style="display:grid;grid-template-columns:1.05fr 1fr;gap:18px;align-items:stretch;margin:8px 0 14px;">
+          <div style="background:linear-gradient(135deg,#fbf1de 0%,#f5e2bd 100%);border-radius:12px;padding:14px 18px;position:relative;">
+            <div style="position:absolute;top:14px;left:14px;width:28px;height:28px;border-radius:50%;background:#b88838;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;">👤</div>
+            <div style="margin-left:38px;">
+              <div style="font-size:9px;color:#b88838;letter-spacing:0.18em;font-weight:700;margin-bottom:2px;">BILL TO</div>
+              <div style="font-size:14px;font-weight:700;color:#3d2817;margin-bottom:5px;">${escapeInvoiceHtml(row.consignee || '')}</div>
+              <div style="font-size:10.5px;color:#3d2817;line-height:1.45;">${escapeInvoiceHtml(addrLine)}</div>
+              <div style="font-size:10.5px;color:#3d2817;margin-top:4px;"><span style="color:#8a6f55;font-weight:500;">State:</span> ${escapeInvoiceHtml(stateName)}${phone ? '&nbsp;&nbsp;<span style="color:#8a6f55;font-weight:500;">Contact:</span> ' + escapeInvoiceHtml(phone) : ''}</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;justify-content:center;padding:8px 4px;">
+            <div style="font-family:'Fraunces',cursive;font-size:24px;color:#c89548;line-height:1.2;transform:rotate(-2deg);font-style:italic;">Thank you for your business!</div>
+          </div>
+        </div>
+
+        <!-- Items -->
+        <table style="width:100%;border-collapse:separate;border-spacing:0;margin-top:4px;border-radius:6px;overflow:hidden;border:1px solid #d4b889;">
+          <thead>
+            <tr style="background:#c89548;">
+              <th style="padding:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#fff;text-align:center;width:5%;border-right:1px solid rgba(255,255,255,0.25);">No.</th>
+              <th style="padding:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#fff;text-align:left;border-right:1px solid rgba(255,255,255,0.25);">Description</th>
+              <th style="padding:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#fff;text-align:center;width:7%;border-right:1px solid rgba(255,255,255,0.25);">Qty</th>
+              <th style="padding:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#fff;text-align:right;width:13%;border-right:1px solid rgba(255,255,255,0.25);">Unit Price</th>
+              <th style="padding:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#fff;text-align:right;width:14%;border-right:1px solid rgba(255,255,255,0.25);">Taxable</th>
+              <th style="padding:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#fff;text-align:right;width:14%;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+
+        <!-- Totals + Payment -->
+        <div style="display:grid;grid-template-columns:1fr 0.85fr;gap:22px;margin-top:16px;">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;color:#b88838;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">
+              <div style="width:22px;height:22px;border-radius:4px;background:#f3e6cc;color:#b88838;display:flex;align-items:center;justify-content:center;font-size:12px;">✉</div>
+              PAYMENT METHODS
+            </div>
+            <div style="font-size:10.5px;color:#6b5340;margin-bottom:6px;">${SELLER_INFO.payment}</div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;">
+              <div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:#3d2817;"><div style="width:22px;height:22px;border-radius:4px;background:#f3e6cc;color:#b88838;display:flex;align-items:center;justify-content:center;font-size:11px;">⇄</div>Bank Transfer</div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:#3d2817;"><div style="width:22px;height:22px;border-radius:4px;background:#f3e6cc;color:#b88838;display:flex;align-items:center;justify-content:center;font-size:11px;">⌬</div>UPI</div>
+              <div style="display:flex;align-items:center;gap:6px;font-size:10.5px;color:#3d2817;"><div style="width:22px;height:22px;border-radius:4px;background:#f3e6cc;color:#b88838;display:flex;align-items:center;justify-content:center;font-size:11px;">▭</div>Credit / Debit Card</div>
+            </div>
+          </div>
+          <div style="background:#fdfbf7;border-radius:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 14px;border-bottom:1px solid #f3e6cc;font-size:11px;"><span style="color:#6b5340;">Taxable Value</span><span style="font-variant-numeric:tabular-nums;color:#3d2817;font-weight:500;">${SELLER_INFO.currency} ${invoiceFmt(totalTaxable)}</span></div>
+            ${taxLines}
+            <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 14px;font-size:11px;"><span style="color:#6b5340;">Shipping</span><span style="color:#8a6f55;font-style:italic;">included</span></div>
+            <div style="background:#fbe8c2;border-radius:6px;margin-top:6px;padding:14px;display:flex;justify-content:space-between;align-items:baseline;">
+              <span style="font-size:12px;text-transform:uppercase;letter-spacing:0.1em;font-weight:700;color:#3d2817;">TOTAL DUE</span>
+              <span style="font-size:19px;font-weight:800;color:#3d2817;font-variant-numeric:tabular-nums;">${SELLER_INFO.currency} ${invoiceFmt(total)}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Amount in words -->
+        <div style="margin-top:12px;padding:8px 12px;background:#fdfbf7;border-left:3px solid #c89548;font-size:10.5px;border-radius:0 4px 4px 0;">
+          <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.12em;color:#b88838;margin-bottom:2px;font-weight:700;">Amount in Words</div>
+          <div style="color:#3d2817;font-weight:600;">${invoiceNumberToWords(Math.round(total))} only</div>
+        </div>
+
+        ${row.awb ? `
+        <div style="margin-top:6px;padding:8px 12px;background:#fdfbf7;border-left:3px solid #c89548;font-size:10.5px;border-radius:0 4px 4px 0;">
+          <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.12em;color:#b88838;margin-bottom:2px;font-weight:700;">${awbLabel}</div>
+          <div style="color:#3d2817;font-weight:600;font-family:monospace;">${escapeInvoiceHtml(String(row.awb))}</div>
+        </div>` : ''}
+
+        <!-- Signatory -->
+        <div style="margin-top:14px;text-align:right;">
+          <div style="font-size:10.5px;color:#6b5340;margin-bottom:4px;">For <strong style="color:#3d2817;">${SELLER_INFO.company}</strong></div>
+          <div style="height:44px;"></div>
+          <div style="font-size:10.5px;color:#3d2817;font-weight:600;border-top:1px solid #d4b889;padding-top:4px;display:inline-block;min-width:140px;">${SELLER_INFO.signatory}</div>
+        </div>
+
+        <div style="margin-top:10px;font-size:11px;color:#6b5340;text-align:center;font-style:italic;">We truly appreciate your business and look forward to serving you again.</div>
+      </div>
+
+      <div style="margin-top:18px;font-size:9.5px;color:#8a6f55;line-height:1.5;text-align:center;padding:0 18mm 14mm;">${SELLER_INFO.declaration}</div>
+    </div>`;
+}
+
+/* Generate a single invoice PDF using html2canvas + jsPDF. */
+async function generateInvoicePdf(row){
+  if(typeof window.jspdf === 'undefined') throw new Error('jsPDF not loaded');
+  if(typeof window.html2canvas === 'undefined') throw new Error('html2canvas not loaded');
+
+  const html = buildInvoiceHtml(row);
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed;top:0;left:-99999px;z-index:-1;background:white;';
+  container.innerHTML = html;
+  document.body.appendChild(container);
+  await document.fonts.ready;
+  await new Promise(r => requestAnimationFrame(()=>requestAnimationFrame(r)));
+
+  try {
+    const pageEl = container.firstElementChild;
+    const canvas = await html2canvas(pageEl, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#fdfbf7',
+      logging: false,
+      windowWidth: pageEl.scrollWidth,
+      windowHeight: pageEl.scrollHeight,
+    });
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4', compress:true });
+    const pdfW = 210, pdfH = 297;
+    const imgH = (canvas.height * pdfW) / canvas.width;
+
+    if(imgH <= pdfH + 10){
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pdfW, Math.min(imgH, pdfH));
+    } else {
+      const pxPerMm = canvas.width / pdfW;
+      const sliceH = Math.floor(pdfH * pxPerMm);
+      const slices = Math.ceil(canvas.height / sliceH);
+      for(let i = 0; i < slices; i++){
+        const sy = i * sliceH;
+        const sh = Math.min(sliceH, canvas.height - sy);
+        const sc = document.createElement('canvas');
+        sc.width = canvas.width;
+        sc.height = sh;
+        const ctx = sc.getContext('2d');
+        ctx.fillStyle = '#fdfbf7';
+        ctx.fillRect(0, 0, sc.width, sc.height);
+        ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+        if(i > 0) pdf.addPage();
+        pdf.addImage(sc.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pdfW, sh / pxPerMm);
+      }
+    }
+
+    const blob = pdf.output('blob');
+    return new Uint8Array(await blob.arrayBuffer());
+  } finally {
+    document.body.removeChild(container);
+  }
+}
+
+/* ============================================================
+ * DISPATCH ENGINE — orchestrate label fetch + invoice generation
+ * ============================================================ */
+
+async function runDispatch(){
+  // Validate prerequisites
+  if(!State.settings.cargo.token){ toast('Set Cargo token in Settings', 'error'); openSettings(); return; }
+  if(!State.settings.proxyUrl){ toast('Set Proxy URL in Settings', 'error'); openSettings(); return; }
+
+  const rows = currentSortedDispatch();
+  if(rows.length === 0){ toast('No rows to dispatch', 'error'); return; }
+
+  $('#generateBtn').disabled = true;
+  $('#progressBlock').style.display = '';
+  $('#progressLog').innerHTML = '';
+  setProgress(0, rows.length, 'Starting…');
+  logProgress(`Starting dispatch for ${rows.length} rows`);
+
+  // Phase 1: Fetch labels
+  const labelBytes = [];           // [{ row, bytes }] in display order
+  const labelFailures = [];
+  let done = 0;
+  for(const r of rows){
+    setProgress(done, rows.length, `Fetching label for ${r.orderId} (${r.awb})…`);
+    try{
+      const result = await cargoFetchLabelBytes(r.awb);
+      const clean = await stripAdPages(result.bytes, r.awb);
+      labelBytes.push({ row: r, bytes: clean });
+      logProgress(`✓ Label ${r.awb} — ${(clean.length/1024).toFixed(1)} KB`, 'ok');
+    } catch(err){
+      labelFailures.push({ row: r, error: err.message });
+      logProgress(`✗ Label ${r.awb} — ${err.message}`, 'err');
+    }
+    done++;
+    setProgress(done, rows.length);
+  }
+
+  if(labelBytes.length === 0){
+    setProgress(done, rows.length, `All ${labelFailures.length} label fetches failed.`);
+    toast('No labels fetched. Check Cargo token and proxy.', 'error', 6000);
+    $('#generateBtn').disabled = false;
+    return;
+  }
+
+  // Phase 2: Merge labels PDF
+  setProgress(done, rows.length, 'Merging labels PDF…');
+  let labelsPdf;
+  try{
+    labelsPdf = await mergePdfs(labelBytes.map(x => x.bytes));
+    logProgress(`✓ Labels PDF merged — ${labelBytes.length} pages, ${(labelsPdf.length/1024).toFixed(1)} KB`, 'ok');
+  } catch(err){
+    logProgress(`✗ Label merge failed: ${err.message}`, 'err');
+    toast('Label merge failed', 'error');
+    $('#generateBtn').disabled = false;
+    return;
+  }
+
+  // Phase 3: Generate invoices — one per unique Order ID (first-appearance order)
+  const seenOrderIds = new Set();
+  const invoiceQueue = [];
+  for(const { row } of labelBytes){
+    if(seenOrderIds.has(row.orderId)) continue;
+    seenOrderIds.add(row.orderId);
+    const invRow = State.invoiceByOrderId[row.orderId];
+    if(!invRow) continue;
+    invoiceQueue.push({ orderId: row.orderId, invRow });
+  }
+  logProgress(`Generating ${invoiceQueue.length} invoices for unique orders…`);
+
+  const invoiceBytes = [];
+  const invoiceFailures = [];
+  let invDone = 0;
+  for(const { orderId, invRow } of invoiceQueue){
+    setProgress(invDone, invoiceQueue.length, `Invoice for ${orderId}…`);
+    try{
+      const bytes = await generateInvoicePdf(invRow);
+      invoiceBytes.push(bytes);
+      logProgress(`✓ Invoice ${orderId}`, 'ok');
+    } catch(err){
+      invoiceFailures.push({ orderId, error: err.message });
+      logProgress(`✗ Invoice ${orderId} — ${err.message}`, 'err');
+    }
+    invDone++;
+  }
+
+  let invoicesPdf = null;
+  if(invoiceBytes.length > 0){
+    setProgress(invDone, invoiceQueue.length, 'Merging invoices PDF…');
+    try{
+      invoicesPdf = await mergePdfs(invoiceBytes);
+      logProgress(`✓ Invoices PDF merged — ${invoiceBytes.length} pages, ${(invoicesPdf.length/1024).toFixed(1)} KB`, 'ok');
+    } catch(err){
+      logProgress(`✗ Invoice merge failed: ${err.message}`, 'err');
+    }
+  }
+
+  // Phase 4: Download
+  const dateStr = new Date().toISOString().slice(0, 10);
+  triggerDownload(labelsPdf, `quickship_labels_${dateStr}.pdf`);
+  if(invoicesPdf) triggerDownload(invoicesPdf, `quickship_invoices_${dateStr}.pdf`);
+
+  // Summary
+  setProgress(invDone, invoiceQueue.length,
+    `Done — ${labelBytes.length} labels, ${invoiceBytes.length} invoices`);
+  logProgress('', 'info');
+  logProgress(`══ SUMMARY ══`);
+  logProgress(`Labels:    ${labelBytes.length} of ${rows.length} fetched (${labelFailures.length} failed)`);
+  logProgress(`Invoices:  ${invoiceBytes.length} of ${invoiceQueue.length} generated (${invoiceFailures.length} failed)`);
+  const missingInvoice = rows.length - seenOrderIds.size;
+  if(missingInvoice > 0) logProgress(`Skipped:   ${missingInvoice} rows had no invoice data`, 'warn');
+  if(labelFailures.length) logProgress(`Label failures (use these AWBs for manual retry):`, 'warn');
+  labelFailures.forEach(f => logProgress(`  - ${f.row.orderId} (${f.row.awb}): ${f.error}`, 'warn'));
+
+  toast(`Dispatch complete — ${labelBytes.length} labels, ${invoiceBytes.length} invoices downloaded`, 'success', 5000);
+  $('#generateBtn').disabled = false;
+}
+
+function currentSortedDispatch(){
+  const rows = State.dispatchRows.slice();
+  if(State.sort.col){
+    rows.sort((a, b) => {
+      const av = a[State.sort.col] || '';
+      const bv = b[State.sort.col] || '';
+      if(av < bv) return State.sort.dir === 'asc' ? -1 : 1;
+      if(av > bv) return State.sort.dir === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }
+  return rows;
+}
+
+function setProgress(done, total, label){
+  const pct = total === 0 ? 0 : Math.round((done / total) * 100);
+  $('#progressFill').style.width = pct + '%';
+  $('#progressCount').textContent = `${done}/${total}`;
+  if(label !== undefined) $('#progressLabel').textContent = label;
+}
+
+function logProgress(msg, type='info'){
+  const div = document.createElement('div');
+  div.className = 'log-line ' + (type === 'info' ? '' : type);
+  const t = new Date().toLocaleTimeString();
+  div.textContent = msg ? `[${t}] ${msg}` : '';
+  const log = $('#progressLog');
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+/* ------------------- Drive ------------------- */
+let tokenClient = null;
+
+function initDrive(){
+  if(typeof google === 'undefined' || !google.accounts){
+    setTimeout(initDrive, 300);
+    return;
+  }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: OAUTH_CLIENT_ID,
+    scope: DRIVE_SCOPES,
+    callback: (resp) => {
+      if(resp.error){
+        toast('Drive auth failed: ' + resp.error, 'error');
+        return;
+      }
+      State.drive.accessToken = resp.access_token;
+      State.drive.connected = true;
+      renderDriveStatus();
+      toast('Drive connected', 'success');
+      // Hydrate settings from Drive
+      readDriveJSON('quickship_settings.json').then(s => {
+        if(s) Object.assign(State.settings, s);
+        applySettingsToInputs();
+      }).catch(()=>{});
+    }
+  });
+}
+
+function ensureDrive(){
+  if(!tokenClient){ initDrive(); setTimeout(ensureDrive, 400); return; }
+  if(State.drive.accessToken) return;
+  tokenClient.requestAccessToken({ prompt: '' });
+}
+
+function renderDriveStatus(){
+  const pill = $('#driveSyncPill');
+  const text = $('#driveSyncText');
+  const btn = $('#connectDriveBtn');
+  if(State.drive.connected){
+    pill.classList.add('connected');
+    text.textContent = 'Drive: Connected';
+    btn.textContent = 'Re-auth';
+  } else {
+    pill.classList.remove('connected');
+    text.textContent = 'Drive: Not connected';
+    btn.textContent = 'Connect Drive';
+  }
+}
+
+async function findFileId(name){
+  if(!State.settings.driveFolderId) throw new Error('Drive folder ID not set');
+  const q = encodeURIComponent(`name='${name}' and '${State.settings.driveFolderId}' in parents and trashed=false`);
+  const resp = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)`, {
+    headers: { Authorization: 'Bearer ' + State.drive.accessToken }
+  });
+  if(!resp.ok) throw new Error('list failed HTTP ' + resp.status);
+  const j = await resp.json();
+  return j.files && j.files[0] ? j.files[0].id : null;
+}
+
+async function writeDriveJSON(name, data){
+  if(!State.drive.accessToken) throw new Error('Drive not connected');
+  if(!State.settings.driveFolderId) throw new Error('Drive folder ID not set');
+  const existingId = await findFileId(name);
+  const metadata = existingId ? { name } : { name, parents: [State.settings.driveFolderId] };
+  const boundary = '-----quickship' + Date.now();
+  const delim = '\r\n--' + boundary + '\r\n';
+  const closeDelim = '\r\n--' + boundary + '--';
+  let body = '';
+  body += delim + 'Content-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(metadata);
+  body += delim + 'Content-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(data) + closeDelim;
+  const url = existingId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=multipart`
+    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+  const resp = await fetch(url, {
+    method: existingId ? 'PATCH' : 'POST',
+    headers: {
+      Authorization: 'Bearer ' + State.drive.accessToken,
+      'Content-Type': 'multipart/related; boundary=' + boundary
+    },
+    body
+  });
+  if(!resp.ok){
+    let errText = '';
+    try{ errText = await resp.text(); }catch{}
+    throw new Error(`Drive ${resp.status}: ${errText.slice(0, 200)}`);
+  }
+  return resp.json();
+}
+
+async function readDriveJSON(name){
+  if(!State.drive.accessToken) return null;
+  if(!State.settings.driveFolderId) return null;
+  const id = await findFileId(name);
+  if(!id) return null;
+  const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
+    headers: { Authorization: 'Bearer ' + State.drive.accessToken }
+  });
+  if(!resp.ok) return null;
+  return resp.json();
+}
+
+/* ------------------- Settings UI ------------------- */
+function openSettings(){
+  applySettingsToInputs();
+  $('#settingsModal').classList.add('active');
+}
+
+function closeSettings(){
+  $('#settingsModal').classList.remove('active');
+}
+
+function applySettingsToInputs(){
+  $('#cfg-drive-folder').value = State.settings.driveFolderId || '';
+  $('#cfg-cargo-email').value = State.settings.cargo.email || '';
+  // For sensitive fields, show empty + use placeholder to indicate saved state
+  const tokenInput = $('#cfg-cargo-token');
+  const pwdInput = $('#cfg-cargo-password');
+  if(State.settings.cargo.token){
+    tokenInput.value = '';
+    tokenInput.placeholder = '•••••• (saved — type new to replace)';
+  } else {
+    tokenInput.value = '';
+    tokenInput.placeholder = 'JWT or 40-char hex';
+  }
+  if(State.settings.cargo.password){
+    pwdInput.value = '';
+    pwdInput.placeholder = '•••••• (saved — type new to replace)';
+  } else {
+    pwdInput.value = '';
+    pwdInput.placeholder = '••••••••';
+  }
+  $('#cfg-proxy-url').value = State.settings.proxyUrl || '';
+}
+
+function saveSettings(){
+  const folder = $('#cfg-drive-folder').value.trim();
+  const email = $('#cfg-cargo-email').value.trim();
+  const pwd = $('#cfg-cargo-password').value;
+  const token = $('#cfg-cargo-token').value.trim();
+  const proxy = $('#cfg-proxy-url').value.trim().replace(/\/+$/, '');
+
+  State.settings.driveFolderId = folder;
+  if(email !== undefined) State.settings.cargo.email = email;
+  if(pwd) State.settings.cargo.password = pwd;
+  if(token) State.settings.cargo.token = token;
+  State.settings.proxyUrl = proxy;
+
+  persistLocal();
+  if(State.drive.connected && folder){
+    writeDriveJSON('quickship_settings.json', State.settings)
+      .then(() => toast('Settings saved to Drive', 'success'))
+      .catch(err => toast('Saved locally — Drive write failed: ' + err.message, 'error', 5000));
+  } else {
+    toast('Settings saved locally' + (folder ? ' (Drive not connected)' : ''), 'success');
+  }
+  applySettingsToInputs();
+}
+
+async function testDrive(){
+  const result = $('#driveFolderResult');
+  const folder = $('#cfg-drive-folder').value.trim();
+  if(!folder){
+    result.textContent = '✗ Enter a folder ID first';
+    result.style.color = 'var(--red)';
+    return;
+  }
+  if(!State.drive.connected){
+    result.textContent = '✗ Connect Drive first (top-right button)';
+    result.style.color = 'var(--red)';
+    return;
+  }
+  result.textContent = 'Checking…';
+  result.style.color = 'var(--ink-3)';
+  try{
+    const resp = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folder)}?fields=id,name,mimeType`, {
+      headers: { Authorization: 'Bearer ' + State.drive.accessToken }
+    });
+    if(!resp.ok) throw new Error(`HTTP ${resp.status} — folder not accessible`);
+    const f = await resp.json();
+    if(f.mimeType !== 'application/vnd.google-apps.folder') throw new Error('Not a folder');
+    result.textContent = `✓ "${f.name}"`;
+    result.style.color = 'var(--green)';
+    State.settings.driveFolderId = folder;
+    persistLocal();
+  } catch(err){
+    result.textContent = '✗ ' + err.message;
+    result.style.color = 'var(--red)';
+  }
+}
+
+async function testCargo(){
+  const result = $('#cargoResult');
+  // Pull values from inputs first
+  const email = $('#cfg-cargo-email').value.trim();
+  const pwd = $('#cfg-cargo-password').value;
+  const token = $('#cfg-cargo-token').value.trim();
+  const proxy = $('#cfg-proxy-url').value.trim().replace(/\/+$/, '');
+  if(email) State.settings.cargo.email = email;
+  if(pwd) State.settings.cargo.password = pwd;
+  if(token) State.settings.cargo.token = token;
+  if(proxy) State.settings.proxyUrl = proxy;
+
+  if(!State.settings.cargo.token){
+    result.textContent = '✗ Token required';
+    result.style.color = 'var(--red)';
+    return;
+  }
+  if(!State.settings.proxyUrl){
+    result.textContent = '✗ Proxy URL required';
+    result.style.color = 'var(--red)';
+    return;
+  }
+  result.textContent = 'Testing…';
+  result.style.color = 'var(--ink-3)';
+  try{
+    // Hit shipment-list across all statuses with a small page
+    const today = new Date();
+    const yearAgo = new Date(today.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const fmt = d => d.toISOString().slice(0, 10);
+    const qs = new URLSearchParams({
+      page: '1', page_size: '10',
+      created_at_after: fmt(yearAgo),
+      created_at_before: fmt(today),
+      entity: 'shipment'
+    });
+    const data = await cargoFetch('/shipment-list/?' + qs.toString());
+    const list = extractShipmentList(data);
+    result.textContent = `✓ Cargo OK — ${list.length}+ shipments accessible`;
+    result.style.color = 'var(--green)';
+    persistLocal();
+  } catch(err){
+    result.textContent = '✗ ' + err.message;
+    result.style.color = 'var(--red)';
+  }
+}
+
+async function testProxy(){
+  const result = $('#proxyResult');
+  const url = $('#cfg-proxy-url').value.trim().replace(/\/+$/, '');
+  if(!url){
+    result.textContent = '✗ Enter URL first';
+    result.style.color = 'var(--red)';
+    return;
+  }
+  result.textContent = 'Checking…';
+  result.style.color = 'var(--ink-3)';
+  try{
+    const resp = await fetch(url + '/health');
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const j = await resp.json();
+    if(!j.ok) throw new Error('not-ok');
+    result.textContent = `✓ ${j.name || 'proxy'} v${j.version || '?'}`;
+    result.style.color = 'var(--green)';
+    State.settings.proxyUrl = url;
+    persistLocal();
+  } catch(err){
+    result.textContent = '✗ ' + err.message;
+    result.style.color = 'var(--red)';
+  }
+}
+
+/* ------------------- Bindings ------------------- */
+function bindDropZone(zoneSel, inputSel, onFile){
+  const zone = $(zoneSel);
+  const input = $(inputSel);
+  zone.addEventListener('click', () => input.click());
+  input.addEventListener('change', e => {
+    const f = e.target.files[0];
+    if(f) readFile(f, onFile);
+  });
+  ['dragenter','dragover'].forEach(ev => {
+    zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.add('dragover'); });
+  });
+  ['dragleave','drop'].forEach(ev => {
+    zone.addEventListener(ev, e => { e.preventDefault(); zone.classList.remove('dragover'); });
+  });
+  zone.addEventListener('drop', e => {
+    const f = e.dataTransfer.files[0];
+    if(f) readFile(f, onFile);
+  });
+}
+
+function readFile(f, onText){
+  const reader = new FileReader();
+  reader.onload = ev => onText(ev.target.result);
+  reader.onerror = () => toast('Could not read file', 'error');
+  reader.readAsText(f);
+}
+
+function bindAll(){
+  // Drop zones
+  bindDropZone('#dispatchDrop', '#dispatchFile', ingestDispatchCsv);
+  bindDropZone('#invoiceDrop', '#invoiceFile', ingestInvoiceCsv);
+
+  // Paste-area parse buttons
+  $('#dispatchParseBtn').addEventListener('click', () => {
+    const text = $('#dispatchPaste').value;
+    if(!text.trim()){ toast('Paste data first', 'error'); return; }
+    ingestDispatchCsv(text);
+  });
+  $('#dispatchClearBtn').addEventListener('click', () => {
+    $('#dispatchPaste').value = '';
+    State.dispatchRows = [];
+    $('#dispatchMeta').textContent = 'no file yet';
+    $('#step1').classList.remove('done');
+    $('#dispatchStatus').innerHTML = '';
+    refreshReview();
+  });
+  $('#invoiceParseBtn').addEventListener('click', () => {
+    const text = $('#invoicePaste').value;
+    if(!text.trim()){ toast('Paste data first', 'error'); return; }
+    ingestInvoiceCsv(text);
+  });
+  $('#invoiceClearBtn').addEventListener('click', () => {
+    $('#invoicePaste').value = '';
+    State.invoiceRows = [];
+    State.invoiceByOrderId = {};
+    $('#invoiceMeta').textContent = 'no file yet';
+    $('#step2').classList.remove('done');
+    $('#invoiceStatus').innerHTML = '';
+    refreshReview();
+  });
+
+  // Sort headers
+  $$('.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.sort;
+      if(State.sort.col === col){
+        State.sort.dir = State.sort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        State.sort.col = col;
+        State.sort.dir = 'asc';
+      }
+      refreshReview();
+    });
+  });
+
+  // Generate
+  $('#generateBtn').addEventListener('click', runDispatch);
+
+  // Drive + Settings
+  $('#connectDriveBtn').addEventListener('click', ensureDrive);
+  $('#openSettingsBtn').addEventListener('click', openSettings);
+  $('#closeSettingsBtn').addEventListener('click', closeSettings);
+  $('#saveSettingsBtn').addEventListener('click', () => { saveSettings(); closeSettings(); });
+  $('#testDriveBtn').addEventListener('click', testDrive);
+  $('#testCargoBtn').addEventListener('click', testCargo);
+  $('#testProxyBtn').addEventListener('click', testProxy);
+  $('#settingsModal').addEventListener('click', e => {
+    if(e.target.id === 'settingsModal') closeSettings();
+  });
+}
+
+/* ------------------- Init ------------------- */
+function init(){
+  restoreLocal();
+  applySettingsToInputs();
+  bindAll();
+  renderDriveStatus();
+  initDrive();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>
