@@ -394,6 +394,88 @@
     margin-top: 16px;
   }
 
+  /* ===== Landing screen (pre-auth) ===== */
+  .landing{
+    min-height: calc(100vh - 60px);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 40px 24px;
+  }
+  .landing-card{
+    max-width: 460px;
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 40px 36px;
+    text-align: center;
+    box-shadow: var(--shadow-md);
+  }
+  .landing-icon{
+    width: 64px;
+    height: 64px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin-bottom: 18px;
+  }
+  .landing-title{
+    font-family:'Fraunces',serif;
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+  .landing-sub{
+    font-size: 13px;
+    color: var(--ink-3);
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+  .landing-card .btn{
+    padding: 11px 22px;
+    font-size: 14px;
+  }
+  .landing-fine{
+    font-size: 11px;
+    color: var(--ink-3);
+    margin-top: 18px;
+    font-family:'JetBrains Mono', monospace;
+  }
+  .landing-error{
+    background: var(--red-soft);
+    color: var(--red);
+    border: 1px solid #e8c5c5;
+    padding: 14px 16px;
+    border-radius: 8px;
+    margin-top: 20px;
+    font-size: 12.5px;
+    line-height: 1.6;
+    text-align: left;
+  }
+  .landing-error strong{display:block;margin-bottom:4px;font-weight:600}
+  .landing-error .mono{font-size:11px;margin-top:6px;display:block;color:var(--red)}
+
+  /* ===== Admin badge for non-owners ===== */
+  .admin-badge{
+    display:inline-flex;
+    align-items:center;
+    gap: 5px;
+    padding: 4px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+  .admin-badge .lock{color: var(--ink-3); font-size: 10px}
+  .admin-badge strong{font-weight:600;color:var(--ink)}
+
   /* ===== Progress overlay ===== */
   .progress-block{
     margin-top: 16px;
@@ -489,13 +571,31 @@
       <span class="dot"></span>
       <span id="driveSyncText">Drive: Not connected</span>
     </div>
-    <button class="btn ghost sm" id="connectDriveBtn">Connect Drive</button>
-    <button class="btn ghost sm" id="openSettingsBtn">⚙ Settings</button>
+    <div class="admin-badge" id="adminBadge" style="display:none">
+      <span class="lock">🔒</span>
+      <span>configured by <strong id="adminBadgeEmail">—</strong></span>
+    </div>
+    <button class="btn ghost sm" id="reauthBtn" style="display:none">Switch account</button>
+    <button class="btn ghost sm" id="openSettingsBtn" style="display:none">⚙ Settings</button>
   </div>
 </header>
 
-<!-- ===== WORKSPACE ===== -->
-<main class="workspace">
+<!-- ===== LANDING SCREEN (pre-auth or access denied) ===== -->
+<div class="landing" id="landingScreen">
+  <div class="landing-card">
+    <div class="landing-icon" id="landingIcon">🔐</div>
+    <div class="landing-title" id="landingTitle">Connect Google Drive</div>
+    <div class="landing-sub" id="landingSub">
+      QuickShip reads its configuration from a shared Drive folder. Sign in with the Google account that has access to the QuickShip folder to continue.
+    </div>
+    <button class="btn accent lg" id="landingConnectBtn">Connect Drive</button>
+    <div class="landing-fine" id="landingFine">No credentials are stored on this device.</div>
+    <div class="landing-error" id="landingError" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ===== WORKSPACE (hidden until access granted) ===== -->
+<main class="workspace" id="workspace" style="display:none">
 
   <!-- STEP 1: Dispatch CSV -->
   <section class="step" id="step1">
@@ -671,7 +771,11 @@
 
 const STORAGE_KEY = 'quickship_v1';
 const OAUTH_CLIENT_ID = '801481705797-4lr6orueunsbdk5vhhe578bga4ai6lhq.apps.googleusercontent.com';
-const DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
+// drive.file = our created/opened files;  drive.metadata.readonly = folder owner info;  userinfo.email = current user
+const DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/userinfo.email';
+
+// Hardcoded default. Only the owner of this folder can change it via Settings.
+const DEFAULT_FOLDER_ID = '1arIa75Bckn9E-MeRqA693dczSf-EEKl9';
 
 const State = {
   dispatchRows: [],        // parsed dispatch CSV — sequence and AWBs
@@ -679,13 +783,17 @@ const State = {
   invoiceByOrderId: {},    // Map<orderId, invoiceRow> for fast join
   sort: { col: null, dir: 'asc' },
   settings: {
-    driveFolderId: '',
+    driveFolderId: DEFAULT_FOLDER_ID,
     cargo: { email: '', password: '', token: '' },
     proxyUrl: ''
   },
   drive: {
     accessToken: null,
-    connected: false
+    connected: false,
+    currentUserEmail: null,  // logged-in user
+    folderOwnerEmail: null,  // owner of the QuickShip folder
+    isOwner: false,          // true if currentUserEmail === folderOwnerEmail
+    settingsExist: false     // true if quickship_settings.json was found in folder
   }
 };
 
@@ -709,9 +817,19 @@ function escapeHtml(s){
   })[m]);
 }
 
+/* Local cache. Two modes:
+ *   - Pre-auth or non-owner: only persist driveFolderId (so we remember the
+ *     folder; everything else lives in Drive and gets pulled fresh on each
+ *     login). Credentials NEVER touch this device's localStorage for staff.
+ *   - Owner: shadow-cache the full settings object so a flaky network on the
+ *     admin device still keeps QuickShip working.
+ */
 function persistLocal(){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ settings: State.settings }));
+    const toSave = State.drive.isOwner
+      ? { settings: State.settings }
+      : { settings: { driveFolderId: State.settings.driveFolderId } };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   }catch(e){}
 }
 
@@ -1123,7 +1241,12 @@ async function cargoFetch(path, opts = {}){
           if(newToken){
             State.settings.cargo.token = newToken;
             persistLocal();
-            if(State.drive.connected) writeDriveJSON('quickship_settings.json', State.settings).catch(()=>{});
+            // Only the admin/owner is allowed to mutate the Drive settings file —
+            // writes from staff would either silently fail (drive.file scope can't
+            // re-claim a file they don't own) or overwrite admin config.
+            if(State.drive.connected && State.drive.isOwner){
+              writeDriveJSON('quickship_settings.json', State.settings).catch(()=>{});
+            }
             return cargoFetch(path, { ...opts, _retry: true });
           }
         }
@@ -1738,42 +1861,157 @@ function initDrive(){
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: OAUTH_CLIENT_ID,
     scope: DRIVE_SCOPES,
-    callback: (resp) => {
+    callback: async (resp) => {
       if(resp.error){
-        toast('Drive auth failed: ' + resp.error, 'error');
+        showLandingError('Sign-in failed', resp.error);
         return;
       }
       State.drive.accessToken = resp.access_token;
       State.drive.connected = true;
       renderDriveStatus();
-      toast('Drive connected', 'success');
-      // Hydrate settings from Drive
-      readDriveJSON('quickship_settings.json').then(s => {
-        if(s) Object.assign(State.settings, s);
-        applySettingsToInputs();
-      }).catch(()=>{});
+
+      // Resolve who the user is, who owns the folder, whether settings exist
+      try{
+        await resolveAccess();
+        afterAccessResolved();
+      } catch(err){
+        console.error('[QuickShip] access resolution failed:', err);
+        showLandingError('Could not check access',
+          err.message + '. Make sure the QuickShip Drive folder is shared with your Google account, then try again.');
+      }
     }
   });
+}
+
+/* Determine: who am I, who owns the folder, does the settings file exist?
+ * Sets State.drive.{currentUserEmail, folderOwnerEmail, isOwner, settingsExist}
+ * and hydrates State.settings if settings file is readable.
+ */
+async function resolveAccess(){
+  const folderId = State.settings.driveFolderId || DEFAULT_FOLDER_ID;
+
+  // 1. Current user's email
+  const meResp = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: 'Bearer ' + State.drive.accessToken }
+  });
+  if(!meResp.ok) throw new Error('Could not fetch user info (HTTP ' + meResp.status + ')');
+  const me = await meResp.json();
+  State.drive.currentUserEmail = (me.email || '').toLowerCase();
+
+  // 2. Folder metadata — owner email
+  const folderResp = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,name,owners(emailAddress,displayName),mimeType`,
+    { headers: { Authorization: 'Bearer ' + State.drive.accessToken }}
+  );
+  if(folderResp.status === 404){
+    throw new Error('QuickShip folder not found. The admin needs to share the folder with your account.');
+  }
+  if(!folderResp.ok){
+    throw new Error('Could not read folder (HTTP ' + folderResp.status + ')');
+  }
+  const folder = await folderResp.json();
+  if(folder.mimeType !== 'application/vnd.google-apps.folder'){
+    throw new Error('Configured folder ID is not a Drive folder.');
+  }
+  const owners = folder.owners || [];
+  State.drive.folderOwnerEmail = ((owners[0] && owners[0].emailAddress) || '').toLowerCase();
+  State.drive.isOwner = (State.drive.currentUserEmail === State.drive.folderOwnerEmail);
+
+  // 3. Read settings file if present (regardless of role — both owner and viewer
+  //    need the settings to function)
+  const settingsFromDrive = await readDriveJSON('quickship_settings.json').catch(() => null);
+  if(settingsFromDrive && typeof settingsFromDrive === 'object'){
+    Object.assign(State.settings, settingsFromDrive);
+    State.drive.settingsExist = true;
+  } else {
+    State.drive.settingsExist = false;
+  }
+}
+
+/* Called after resolveAccess(). Decides what to show. */
+function afterAccessResolved(){
+  const isOwner = State.drive.isOwner;
+  const hasSettings = State.drive.settingsExist;
+
+  // Non-owner + no settings = blocking error
+  if(!isOwner && !hasSettings){
+    showLandingError(
+      'QuickShip is not yet configured',
+      `Ask the admin (${escapeHtml(State.drive.folderOwnerEmail || 'folder owner')}) to set up QuickShip first. Once they've saved the credentials to Drive, refresh this page.`
+    );
+    return;
+  }
+
+  // Owner — even if settings are missing, they can set up now
+  if(isOwner){
+    showApp({ asOwner: true });
+    applySettingsToInputs();
+    if(!hasSettings){
+      // First-time setup — auto-open settings panel and nudge
+      toast('Welcome — set up QuickShip credentials to begin', 'info', 5000);
+      openSettings();
+    }
+    return;
+  }
+
+  // Non-owner + settings present — locked-down view
+  showApp({ asOwner: false });
+}
+
+/* Reveal the workspace, hide the landing screen, configure top bar for role. */
+function showApp(opts){
+  $('#landingScreen').style.display = 'none';
+  $('#workspace').style.display = '';
+  // Top bar buttons
+  $('#reauthBtn').style.display = '';
+  if(opts.asOwner){
+    $('#openSettingsBtn').style.display = '';
+    $('#adminBadge').style.display = 'none';
+  } else {
+    $('#openSettingsBtn').style.display = 'none';
+    $('#adminBadge').style.display = '';
+    $('#adminBadgeEmail').textContent = State.drive.folderOwnerEmail || '—';
+  }
+}
+
+function showLandingError(title, body){
+  const err = $('#landingError');
+  err.innerHTML = `<strong>${escapeHtml(title)}</strong>${escapeHtml(body)}` +
+    (State.drive.currentUserEmail
+      ? `<span class="mono">signed in as ${escapeHtml(State.drive.currentUserEmail)}</span>` : '');
+  err.style.display = '';
+  // Allow user to try a different account
+  $('#landingConnectBtn').textContent = 'Try a different account';
+  $('#landingConnectBtn').onclick = () => {
+    // Clear local token state so the OAuth picker shows account selection
+    State.drive.accessToken = null;
+    State.drive.connected = false;
+    State.drive.currentUserEmail = null;
+    State.drive.folderOwnerEmail = null;
+    State.drive.isOwner = false;
+    State.drive.settingsExist = false;
+    err.style.display = 'none';
+    if(tokenClient) tokenClient.requestAccessToken({ prompt: 'select_account' });
+  };
 }
 
 function ensureDrive(){
   if(!tokenClient){ initDrive(); setTimeout(ensureDrive, 400); return; }
   if(State.drive.accessToken) return;
-  tokenClient.requestAccessToken({ prompt: '' });
+  tokenClient.requestAccessToken({ prompt: 'select_account' });
 }
 
 function renderDriveStatus(){
   const pill = $('#driveSyncPill');
   const text = $('#driveSyncText');
-  const btn = $('#connectDriveBtn');
   if(State.drive.connected){
     pill.classList.add('connected');
-    text.textContent = 'Drive: Connected';
-    btn.textContent = 'Re-auth';
+    text.textContent = State.drive.currentUserEmail
+      ? 'Drive: ' + State.drive.currentUserEmail
+      : 'Drive: Connected';
   } else {
     pill.classList.remove('connected');
     text.textContent = 'Drive: Not connected';
-    btn.textContent = 'Connect Drive';
   }
 }
 
@@ -2069,8 +2307,11 @@ function bindAll(){
   // Generate
   $('#generateBtn').addEventListener('click', runDispatch);
 
-  // Drive + Settings
-  $('#connectDriveBtn').addEventListener('click', ensureDrive);
+  // Drive + Settings — landing buttons + top-bar
+  $('#landingConnectBtn').addEventListener('click', ensureDrive);
+  $('#reauthBtn').addEventListener('click', () => {
+    if(tokenClient) tokenClient.requestAccessToken({ prompt: 'select_account' });
+  });
   $('#openSettingsBtn').addEventListener('click', openSettings);
   $('#closeSettingsBtn').addEventListener('click', closeSettings);
   $('#saveSettingsBtn').addEventListener('click', () => { saveSettings(); closeSettings(); });
@@ -2082,10 +2323,23 @@ function bindAll(){
   });
 }
 
-/* ------------------- Init ------------------- */
+/* ------------------- Init -------------------
+ *
+ * Boot order:
+ *   1) Pull whatever's cached locally (mostly user prefs, not creds)
+ *   2) Ensure the Drive folder ID falls back to the hardcoded DEFAULT
+ *   3) Initialise Google Identity Services
+ *   4) Show the landing screen and wait for user to click Connect Drive
+ *
+ * Everything past auth happens in the OAuth callback → resolveAccess() →
+ * afterAccessResolved(). The workspace stays hidden until then.
+ */
 function init(){
   restoreLocal();
-  applySettingsToInputs();
+  // Always reset folder ID to the hardcoded default unless the owner explicitly
+  // changed it. This way non-owners can't tamper with localStorage to point at
+  // a different folder, and the same HTML works across all staff devices.
+  if(!State.settings.driveFolderId) State.settings.driveFolderId = DEFAULT_FOLDER_ID;
   bindAll();
   renderDriveStatus();
   initDrive();
