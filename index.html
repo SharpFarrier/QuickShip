@@ -726,32 +726,39 @@ function restoreLocal(){
 
 /* ------------------- CSV / TSV parser -------------------
  * Auto-detects delimiter (tab vs comma). Handles quoted fields with embedded
- * delimiters/newlines. Returns { header: string[], rows: object[] }.
+ * delimiters/newlines.
+ *
+ * Returns { header, rows, rawRows } where:
+ *   header  = normalized column names (lowercased, # and ' stripped)
+ *   rows    = object form { headerName: value } — convenient for unique columns
+ *   rawRows = string[] per row — needed when headers are duplicated (collapsing
+ *             by name loses data, see invoice CSV with 3× "Tax" columns)
  */
 function parseDelimited(text){
-  if(!text || !text.trim()) return { header: [], rows: [] };
-  // Detect delimiter — tab beats comma if both present (the invoice CSV uses tabs)
+  if(!text || !text.trim()) return { header: [], rows: [], rawRows: [] };
   const firstLine = text.split(/\r?\n/, 1)[0];
   const delim = firstLine.includes('\t') ? '\t' : ',';
 
   const records = parseRows(text, delim);
-  if(records.length === 0) return { header: [], rows: [] };
+  if(records.length === 0) return { header: [], rows: [], rawRows: [] };
 
-  // Normalize header: trim, strip trailing # and ', lowercase for matching
   const rawHeader = records[0];
   const header = rawHeader.map(h => normalizeHeader(h));
 
   const rows = [];
+  const rawRows = [];
   for(let i = 1; i < records.length; i++){
     const r = records[i];
-    if(r.length === 1 && r[0] === '') continue; // skip blank lines
+    if(r.length === 1 && r[0] === '') continue;
+    const cleaned = r.map(v => (v != null ? String(v).trim() : ''));
+    rawRows.push(cleaned);
     const obj = {};
     for(let j = 0; j < header.length; j++){
-      obj[header[j]] = (r[j] != null ? r[j] : '').trim();
+      obj[header[j]] = cleaned[j] != null ? cleaned[j] : '';
     }
     rows.push(obj);
   }
-  return { header, rows };
+  return { header, rows, rawRows };
 }
 
 function normalizeHeader(h){
@@ -890,61 +897,97 @@ function pickHeader(header, candidates){
   return null;
 }
 
-/* ------------------- Invoice CSV ingest ------------------- */
+/* ------------------- Invoice CSV ingest -------------------
+ *
+ * The invoice CSV has duplicate column names — there are 3 columns literally
+ * named "Tax", 2 named "Taxable", and 1 each named IGST/SGST/CGST. The object
+ * form { headerName: value } collapses these and loses data.
+ *
+ * Strategy: identify financial columns by POSITION using a layout map derived
+ * by scanning the header array left-to-right and tracking occurrence counts.
+ * Non-duplicate fields (consignee, address, etc.) still use the object form.
+ */
 function ingestInvoiceCsv(text){
-  const { header, rows } = parseDelimited(text);
+  const { header, rows, rawRows } = parseDelimited(text);
   if(rows.length === 0){
     setStatus('#invoiceStatus', 'err', 'No rows found.');
     return;
   }
-  const invNoKey   = pickHeader(header, ['invoice no']);
-  const orderKey   = pickHeader(header, ['order no', 'order id', 'order number']);
-  const dateKey    = pickHeader(header, ['invoice date']);
-  const nameKey    = pickHeader(header, ['consignee', 'name', 'customer']);
-  const addrKey    = pickHeader(header, ['address']);
-  const contactKey = pickHeader(header, ['contact', 'phone', 'mobile']);
-  const qtyKey     = pickHeader(header, ['qty', 'quantity']);
-  const skuKey     = pickHeader(header, ['sku']);
-  const productKey = pickHeader(header, ['product name', 'product', 'description']);
-  const priceKey   = pickHeader(header, ['unit price', 'price']);
-  const taxableKey = pickHeader(header, ['taxable']);     // first occurrence wins; column is duplicated in your CSV
-  const taxKey     = pickHeader(header, ['tax']);
-  const igstKey    = pickHeader(header, ['igst']);
-  const sgstKey    = pickHeader(header, ['sgst']);
-  const cgstKey    = pickHeader(header, ['cgst']);
-  const stateKey   = pickHeader(header, ['state']);
-  const awbKey     = pickHeader(header, ['awb', 'tracking id', 'waybill']);
-  const promiseKey = pickHeader(header, ['promise date', 'promised date']);
 
-  if(!orderKey){
+  // Build a column-index map. For repeated names, capture all occurrences.
+  // Example: header ['unit price', 'taxable', 'tax', 'shipping', 'taxable', 'tax', 'tax', 'igst', ...]
+  //   → cols.taxable = [11, 14]   cols.tax = [12, 15, 16]   cols.igst = [17]
+  const cols = {};
+  header.forEach((h, i) => {
+    if(!cols[h]) cols[h] = [];
+    cols[h].push(i);
+  });
+
+  // Single-occurrence fields — look up by normalized name
+  const orderIdx   = (cols['order no'] || cols['order id'] || cols['order number'] || [])[0];
+  const invNoIdx   = (cols['invoice no'] || [])[0];
+  const dateIdx    = (cols['invoice date'] || [])[0];
+  const nameIdx    = (cols['consignee'] || cols['name'] || cols['customer'] || [])[0];
+  const addrIdx    = (cols['address'] || [])[0];
+  const contactIdx = (cols['contact'] || cols['phone'] || cols['mobile'] || [])[0];
+  const qtyIdx     = (cols['qty'] || cols['quantity'] || [])[0];
+  const skuIdx     = (cols['sku'] || [])[0];
+  const productIdx = (cols['product name'] || cols['product'] || cols['description'] || [])[0];
+  const priceIdx   = (cols['unit price'] || cols['price'] || [])[0];
+  const stateIdx   = (cols['state'] || [])[0];
+  const awbIdx     = (cols['awb'] || cols['tracking id'] || cols['waybill'] || [])[0];
+  const promiseIdx = (cols['promise date'] || cols['promised date'] || [])[0];
+
+  // Multi-occurrence financial fields — read FIRST occurrence (the line-item value)
+  // The CSV has:
+  //   Unit Price | Taxable | Tax | Shipping | Taxable | Tax | Tax | IGST | SGST | CGST
+  //   (cols 10)  | (11)    | (12)| (13)     | (14)    | (15)| (16)| (17) | (18) | (19)
+  // We want col 11 (Taxable) and col 12 (Tax) — these are the per-unit line-item values.
+  // Some rows ALSO have the same Tax amount echoed at col 16 (IGST states) — that's
+  // already covered by the IGST column at col 17 in any case.
+  const taxableIdx = (cols['taxable'] || [])[0];   // first Taxable column
+  const taxIdx     = (cols['tax'] || [])[0];        // first Tax column
+  const igstIdx    = (cols['igst'] || [])[0];
+  const sgstIdx    = (cols['sgst'] || [])[0];
+  const cgstIdx    = (cols['cgst'] || [])[0];
+
+  if(orderIdx == null){
     setStatus('#invoiceStatus', 'err', 'Could not find Order No column. Got: ' + header.join(', '));
     return;
   }
 
-  const parsed = rows.map(r => ({
-    invoiceNo: r[invNoKey] || '',
-    orderId: (r[orderKey] || '').trim(),
-    invoiceDate: parseDate(r[dateKey] || ''),
-    invoiceDateRaw: r[dateKey] || '',
-    consignee: r[nameKey] || '',
-    address: r[addrKey] || '',
-    contact: r[contactKey] || '',
-    qty: parseFloat(r[qtyKey] || '1') || 1,
-    sku: r[skuKey] || '',
-    productName: r[productKey] || '',
-    unitPrice: parseFloat((r[priceKey] || '0').replace(/,/g,'')) || 0,
-    taxable: parseFloat((r[taxableKey] || '0').replace(/,/g,'')) || 0,
-    tax: parseFloat((r[taxKey] || '0').replace(/,/g,'')) || 0,
-    igst: parseFloat((r[igstKey] || '0').replace(/,/g,'')) || 0,
-    sgst: parseFloat((r[sgstKey] || '0').replace(/,/g,'')) || 0,
-    cgst: parseFloat((r[cgstKey] || '0').replace(/,/g,'')) || 0,
-    state: r[stateKey] || '',
-    awb: (r[awbKey] || '').trim(),
-    promiseDate: r[promiseKey] || ''
+  // Helper — safe number parse, strips commas
+  const num = v => {
+    if(v == null || v === '') return 0;
+    const n = parseFloat(String(v).replace(/,/g, ''));
+    return isNaN(n) ? 0 : n;
+  };
+  // Helper — get cell by index from a raw row
+  const cell = (row, idx) => (idx != null && row[idx] != null) ? row[idx] : '';
+
+  const parsed = rawRows.map(r => ({
+    invoiceNo: cell(r, invNoIdx),
+    orderId: cell(r, orderIdx).trim(),
+    invoiceDate: parseDate(cell(r, dateIdx)),
+    invoiceDateRaw: cell(r, dateIdx),
+    consignee: cell(r, nameIdx),
+    address: cell(r, addrIdx),
+    contact: cell(r, contactIdx),
+    qty: parseFloat(cell(r, qtyIdx) || '1') || 1,
+    sku: cell(r, skuIdx),
+    productName: cell(r, productIdx),
+    unitPrice: num(cell(r, priceIdx)),
+    taxable: num(cell(r, taxableIdx)),
+    tax: num(cell(r, taxIdx)),
+    igst: num(cell(r, igstIdx)),
+    sgst: num(cell(r, sgstIdx)),
+    cgst: num(cell(r, cgstIdx)),
+    state: cell(r, stateIdx),
+    awb: cell(r, awbIdx).trim(),
+    promiseDate: cell(r, promiseIdx)
   })).filter(r => r.orderId);
 
-  // Build lookup by Order ID. If duplicate Order IDs exist (multi-shipment),
-  // keep the first one and warn — we generate one invoice per order regardless.
+  // Build lookup by Order ID. Duplicates collapse (multi-shipment) — keep first.
   const byOrderId = {};
   let dupes = 0;
   parsed.forEach(r => {
