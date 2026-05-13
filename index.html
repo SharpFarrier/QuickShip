@@ -771,8 +771,16 @@
 
 const STORAGE_KEY = 'quickship_v1';
 const OAUTH_CLIENT_ID = '801481705797-4lr6orueunsbdk5vhhe578bga4ai6lhq.apps.googleusercontent.com';
-// drive.file = our created/opened files;  drive.metadata.readonly = folder owner info;  userinfo.email = current user
-const DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/userinfo.email';
+// Scopes:
+//   drive.file              — create/update files owned by this app (admin writes)
+//   drive.readonly          — read ANY file the user has access to (non-owners reading admin's settings file)
+//   drive.metadata.readonly — read folder owner info to determine role
+//   userinfo.email          — current user's email
+//
+// drive.readonly is necessary because drive.file only sees files the app itself
+// created. A staff account opening QuickShip cannot see the settings file the
+// admin created — drive.readonly is the minimum scope that lifts that block.
+const DRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/userinfo.email';
 
 // Hardcoded default. Only the owner of this folder can change it via Settings.
 const DEFAULT_FOLDER_ID = '1arIa75Bckn9E-MeRqA693dczSf-EEKl9';
@@ -2326,8 +2334,11 @@ function bindAll(){
 /* ------------------- Init -------------------
  *
  * Boot order:
- *   1) Pull whatever's cached locally (mostly user prefs, not creds)
- *   2) Ensure the Drive folder ID falls back to the hardcoded DEFAULT
+ *   1) DO NOT load credentials from localStorage on boot. localStorage may have
+ *      been written by an earlier admin session on this device — a staff member
+ *      opening QuickShip on the same browser must not inherit those creds.
+ *      Credentials are loaded ONLY from Drive, ONLY after role resolution.
+ *   2) Folder ID falls back to the hardcoded DEFAULT.
  *   3) Initialise Google Identity Services
  *   4) Show the landing screen and wait for user to click Connect Drive
  *
@@ -2335,11 +2346,14 @@ function bindAll(){
  * afterAccessResolved(). The workspace stays hidden until then.
  */
 function init(){
-  restoreLocal();
-  // Always reset folder ID to the hardcoded default unless the owner explicitly
-  // changed it. This way non-owners can't tamper with localStorage to point at
-  // a different folder, and the same HTML works across all staff devices.
-  if(!State.settings.driveFolderId) State.settings.driveFolderId = DEFAULT_FOLDER_ID;
+  // Always start with empty creds. Drive is the source of truth.
+  // localStorage is only used by the owner's own session as a shadow cache,
+  // and even there it's overwritten by Drive's contents on every auth.
+  State.settings = {
+    driveFolderId: DEFAULT_FOLDER_ID,
+    cargo: { email: '', password: '', token: '' },
+    proxyUrl: ''
+  };
   bindAll();
   renderDriveStatus();
   initDrive();
