@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg: #fafaf7;
@@ -608,8 +609,8 @@
       <div class="drop-zone" id="dispatchDrop">
         <div class="icon">↥</div>
         <div class="title">Drop file or click</div>
-        <div class="hint">.csv or .tsv from your dispatch list</div>
-        <input type="file" id="dispatchFile" accept=".csv,.tsv,.txt" style="display:none" />
+        <div class="hint">.csv, .tsv, .xlsx, .xls — Excel or text</div>
+        <input type="file" id="dispatchFile" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsb" style="display:none" />
       </div>
       <div class="paste-area">
         <label>Or paste here</label>
@@ -634,8 +635,8 @@
       <div class="drop-zone" id="invoiceDrop">
         <div class="icon">↥</div>
         <div class="title">Drop file or click</div>
-        <div class="hint">.csv or .tsv with full invoice details</div>
-        <input type="file" id="invoiceFile" accept=".csv,.tsv,.txt" style="display:none" />
+        <div class="hint">.csv, .tsv, .xlsx, .xls — Excel or text</div>
+        <input type="file" id="invoiceFile" accept=".csv,.tsv,.txt,.xlsx,.xls,.xlsb" style="display:none" />
       </div>
       <div class="paste-area">
         <label>Or paste here</label>
@@ -747,6 +748,20 @@
       </div>
       <div class="field-group">
         <button class="btn ghost sm" id="testProxyBtn">Health check</button>
+      </div>
+    </div>
+
+    <div class="modal-section">
+      <h3>E-Signature</h3>
+      <div class="field-group">
+        <label>Signature image <span class="hint">(PNG or JPG, appears above "Partner" on every invoice)</span></label>
+        <div id="sigPreviewWrap" style="display:none;margin-bottom:8px;">
+          <img id="sigPreview" style="max-height:60px;max-width:200px;border:1px solid var(--line);border-radius:4px;padding:4px;background:#fff;" />
+          <button class="btn ghost sm" id="sigClearBtn" style="margin-left:8px;vertical-align:middle;">Remove</button>
+        </div>
+        <input type="file" id="sigFileInput" accept="image/png,image/jpeg,image/jpg" style="display:none" />
+        <button class="btn ghost sm" id="sigUploadBtn">Upload signature image</button>
+        <div class="field-result" id="sigResult" style="margin-top:4px;"></div>
       </div>
     </div>
 
@@ -1082,10 +1097,16 @@ function ingestInvoiceCsv(text){
     return;
   }
 
-  // Helper — safe number parse, strips commas
+  // Helper — safe number parse.
+  // Handles raw numbers, comma-grouped numbers ("5,592.37"), currency-prefixed
+  // strings ("₹5,592.37" or "Rs 5592.37"), and trailing whitespace from Excel.
   const num = v => {
     if(v == null || v === '') return 0;
-    const n = parseFloat(String(v).replace(/,/g, ''));
+    if(typeof v === 'number') return isNaN(v) ? 0 : v;
+    // Strip everything that isn't a digit, decimal point, or minus sign
+    const cleaned = String(v).replace(/[^\d.\-]/g, '');
+    if(!cleaned) return 0;
+    const n = parseFloat(cleaned);
     return isNaN(n) ? 0 : n;
   };
   // Helper — get cell by index from a raw row
@@ -1479,8 +1500,14 @@ function buildInvoiceHtml(row){
   const total = +(totalTaxable + totalTax).toFixed(2);
 
   const stateName = getStateName(row.state || '');
-  // Detect inter-state vs intra-state from CGST/SGST columns (intra has values there, inter is empty/zero)
-  const isInter = !((row.cgst > 0) || (row.sgst > 0));
+  // Detect inter-state vs intra-state from the state column.
+  // Maharashtra (MH) = intra-state → CGST + SGST split equally.
+  // All other states = inter-state → full tax as IGST.
+  // This is more reliable than checking CGST/SGST column values, which can be
+  // blank or inconsistent depending on how the invoice CSV was exported.
+  const stateVal = (row.state || '').trim().toUpperCase();
+  const isMH = stateVal === 'MH' || stateVal === 'MAHARASHTRA' || stateVal === '27';
+  const isInter = !isMH;
   const igst = isInter ? totalTax : 0;
   const cgst = isInter ? 0 : +(totalTax / 2).toFixed(2);
   const sgst = isInter ? 0 : +(totalTax - cgst).toFixed(2);
@@ -1642,7 +1669,10 @@ function buildInvoiceHtml(row){
         <!-- Signatory -->
         <div style="margin-top:14px;text-align:right;">
           <div style="font-size:10.5px;color:#6b5340;margin-bottom:4px;">For <strong style="color:#3d2817;">${SELLER_INFO.company}</strong></div>
-          <div style="height:44px;"></div>
+          ${State.settings.signatureDataUrl
+            ? `<img src="${State.settings.signatureDataUrl}" style="max-height:52px;max-width:160px;object-fit:contain;display:block;margin:0 0 0 auto;" />`
+            : `<div style="height:52px;"></div>`
+          }
           <div style="font-size:10.5px;color:#3d2817;font-weight:600;border-top:1px solid #d4b889;padding-top:4px;display:inline-block;min-width:140px;">${SELLER_INFO.signatory}</div>
         </div>
 
@@ -1925,14 +1955,19 @@ async function resolveAccess(){
   State.drive.folderOwnerEmail = ((owners[0] && owners[0].emailAddress) || '').toLowerCase();
   State.drive.isOwner = (State.drive.currentUserEmail === State.drive.folderOwnerEmail);
 
-  // 3. Read settings file if present (regardless of role — both owner and viewer
-  //    need the settings to function)
+  // 3. Read settings file if present
   const settingsFromDrive = await readDriveJSON('quickship_settings.json').catch(() => null);
   if(settingsFromDrive && typeof settingsFromDrive === 'object'){
     Object.assign(State.settings, settingsFromDrive);
     State.drive.settingsExist = true;
   } else {
     State.drive.settingsExist = false;
+  }
+
+  // 4. Read signature image if present (stored as base64 JSON)
+  const sigFromDrive = await readDriveJSON('quickship_signature.json').catch(() => null);
+  if(sigFromDrive && sigFromDrive.dataUrl){
+    State.settings.signatureDataUrl = sigFromDrive.dataUrl;
   }
 }
 
@@ -2089,7 +2124,6 @@ function closeSettings(){
 function applySettingsToInputs(){
   $('#cfg-drive-folder').value = State.settings.driveFolderId || '';
   $('#cfg-cargo-email').value = State.settings.cargo.email || '';
-  // For sensitive fields, show empty + use placeholder to indicate saved state
   const tokenInput = $('#cfg-cargo-token');
   const pwdInput = $('#cfg-cargo-password');
   if(State.settings.cargo.token){
@@ -2107,6 +2141,73 @@ function applySettingsToInputs(){
     pwdInput.placeholder = '••••••••';
   }
   $('#cfg-proxy-url').value = State.settings.proxyUrl || '';
+  // Signature preview
+  renderSigPreview();
+}
+
+function renderSigPreview(){
+  const wrap = $('#sigPreviewWrap');
+  const img  = $('#sigPreview');
+  if(State.settings.signatureDataUrl){
+    img.src = State.settings.signatureDataUrl;
+    wrap.style.display = '';
+  } else {
+    wrap.style.display = 'none';
+    img.src = '';
+  }
+}
+
+function bindSignature(){
+  $('#sigUploadBtn').addEventListener('click', () => $('#sigFileInput').click());
+  $('#sigFileInput').addEventListener('change', e => {
+    const f = e.target.files[0];
+    if(!f) return;
+    if(!f.type.startsWith('image/')){
+      toast('Please upload a PNG or JPG image', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async ev => {
+      const dataUrl = ev.target.result;
+      State.settings.signatureDataUrl = dataUrl;
+      renderSigPreview();
+      $('#sigResult').textContent = 'Saving to Drive…';
+      $('#sigResult').style.color = 'var(--ink-3)';
+      try{
+        await writeDriveJSON('quickship_signature.json', { dataUrl });
+        $('#sigResult').textContent = '✓ Signature saved to Drive';
+        $('#sigResult').style.color = 'var(--green)';
+        persistLocal();
+      } catch(err){
+        $('#sigResult').textContent = '✗ Drive save failed: ' + err.message;
+        $('#sigResult').style.color = 'var(--red)';
+      }
+      // Reset file input so the same file can be re-uploaded if needed
+      e.target.value = '';
+    };
+    reader.readAsDataURL(f);
+  });
+  $('#sigClearBtn').addEventListener('click', async () => {
+    State.settings.signatureDataUrl = '';
+    renderSigPreview();
+    $('#sigResult').textContent = 'Removing from Drive…';
+    $('#sigResult').style.color = 'var(--ink-3)';
+    try{
+      const id = await findFileId('quickship_signature.json');
+      if(id){
+        await fetch(`https://www.googleapis.com/drive/v3/files/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + State.drive.accessToken }
+        });
+      }
+      $('#sigResult').textContent = '✓ Signature removed';
+      $('#sigResult').style.color = 'var(--green)';
+      persistLocal();
+    } catch(err){
+      $('#sigResult').textContent = '✗ ' + err.message;
+      $('#sigResult').style.color = 'var(--red)';
+    }
+  });
 }
 
 function saveSettings(){
@@ -2257,7 +2358,54 @@ function bindDropZone(zoneSel, inputSel, onFile){
   });
 }
 
+/* Read an uploaded file and hand it to the ingest function as a TSV/CSV string.
+ *
+ * Routes by extension:
+ *   .xlsx / .xls / .xlsb  → SheetJS reads workbook, takes first sheet, emits TSV
+ *   .csv / .tsv / .txt    → plain UTF-8 text
+ *
+ * For Excel we use SheetJS's sheet_to_csv with the tab delimiter, which:
+ *   - serialises numbers as their underlying numeric value (e.g. 5592.37, not '₹5,592.37')
+ *   - keeps text cells as-is
+ *   - preserves blank cells as empty fields (critical for our column-position logic)
+ *   - handles merged cells, frozen rows, hidden columns sensibly
+ */
 function readFile(f, onText){
+  const name = (f.name || '').toLowerCase();
+  const isExcel = /\.(xlsx|xls|xlsb|xlsm)$/.test(name);
+
+  if(isExcel){
+    if(typeof XLSX === 'undefined'){
+      toast('Excel reader still loading — try again in a moment', 'error', 4000);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try{
+        const wb = XLSX.read(ev.target.result, { type: 'array', cellDates: false });
+        if(!wb.SheetNames.length){
+          toast('Excel file has no sheets', 'error');
+          return;
+        }
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        // Tab-delimited so the existing parser routes through its tab branch
+        const tsv = XLSX.utils.sheet_to_csv(sheet, { FS: '\t', blankrows: false });
+        if(!tsv.trim()){
+          toast('First sheet is empty', 'error');
+          return;
+        }
+        onText(tsv);
+      } catch(err){
+        console.error('[QuickShip] Excel parse failed:', err);
+        toast('Could not read Excel file: ' + err.message, 'error', 5000);
+      }
+    };
+    reader.onerror = () => toast('Could not read file', 'error');
+    reader.readAsArrayBuffer(f);
+    return;
+  }
+
+  // Plain text path
   const reader = new FileReader();
   reader.onload = ev => onText(ev.target.result);
   reader.onerror = () => toast('Could not read file', 'error');
@@ -2317,6 +2465,7 @@ function bindAll(){
 
   // Drive + Settings — landing buttons + top-bar
   $('#landingConnectBtn').addEventListener('click', ensureDrive);
+  bindSignature();
   $('#reauthBtn').addEventListener('click', () => {
     if(tokenClient) tokenClient.requestAccessToken({ prompt: 'select_account' });
   });
@@ -2352,7 +2501,8 @@ function init(){
   State.settings = {
     driveFolderId: DEFAULT_FOLDER_ID,
     cargo: { email: '', password: '', token: '' },
-    proxyUrl: ''
+    proxyUrl: '',
+    signatureDataUrl: ''   // base64 image, stored in Drive as quickship_signature.png
   };
   bindAll();
   renderDriveStatus();
