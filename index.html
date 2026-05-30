@@ -1387,6 +1387,30 @@ async function stripAdPages(bytes, awb){
   return await out.save();
 }
 
+/* DP World labels: first 2 pages are the commercial invoice / cover sheet,
+ * the actual shipping label starts from page 3. Keep page 3 onwards.
+ * If the PDF has 2 or fewer pages (unexpected), return as-is.
+ */
+async function skipFirstPages(bytes, skip = 2){
+  if(!window.PDFLib) return bytes;
+  const { PDFDocument } = PDFLib;
+  const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const totalPages = src.getPageCount();
+  if(totalPages <= skip) return bytes;   // safety: don't return empty PDF
+  const out = await PDFDocument.create();
+  const indices = Array.from({length: totalPages - skip}, (_, i) => i + skip);
+  const pages = await out.copyPages(src, indices);
+  pages.forEach(p => out.addPage(p));
+  return await out.save();
+}
+
+/* Detect DP World shipment — match courier column (primary) or AWB prefix SP (secondary) */
+function isDPWorld(row){
+  const courier = (row.courier || '').toLowerCase();
+  const awb = (row.awb || '').toUpperCase();
+  return courier.includes('dp world') || awb.startsWith('SP');
+}
+
 async function mergePdfs(byteArrays){
   const { PDFDocument } = PDFLib;
   const out = await PDFDocument.create();
@@ -1766,9 +1790,14 @@ async function runDispatch(){
     setProgress(done, rows.length, `Fetching label for ${r.orderId} (${r.awb})…`);
     try{
       const result = await cargoFetchLabelBytes(r.awb);
-      const clean = await stripAdPages(result.bytes, r.awb);
+      // Page extraction differs by courier:
+      //   DP World  → skip first 2 pages (commercial invoice / cover), keep label from page 3+
+      //   All others → strip last page (Shiprocket ad page), keep everything before it
+      const clean = isDPWorld(r)
+        ? await skipFirstPages(result.bytes, 2)
+        : await stripAdPages(result.bytes, r.awb);
       labelBytes.push({ row: r, bytes: clean });
-      logProgress(`✓ Label ${r.awb} — ${(clean.length/1024).toFixed(1)} KB`, 'ok');
+      logProgress(`✓ Label ${r.awb} (${isDPWorld(r) ? 'DP World' : r.courier || 'Cargo'}) — ${(clean.length/1024).toFixed(1)} KB`, 'ok');
     } catch(err){
       labelFailures.push({ row: r, error: err.message });
       logProgress(`✗ Label ${r.awb} — ${err.message}`, 'err');
