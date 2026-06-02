@@ -1517,11 +1517,12 @@ function buildInvoiceHtml(row){
   // The Unit Price column in the CSV is GST-inclusive (e.g. 6599 for ₹5592.37 taxable + ₹1006.63 tax).
   // Total = unitPrice × qty. taxable and tax columns are per-unit values.
   const qty = row.qty || 1;
-  const taxablePerUnit = row.taxable || 0;
-  const taxPerUnit = row.tax || 0;
-  const totalTaxable = +(taxablePerUnit * qty).toFixed(2);
-  const totalTax = +(taxPerUnit * qty).toFixed(2);
-  const total = +(totalTaxable + totalTax).toFixed(2);
+  // All financial columns in the invoice CSV are order-level totals already —
+  // Unit Price, Taxable, and Tax reflect the full order value (qty × per-unit).
+  // Do NOT multiply by qty again.
+  const totalTaxable = +(row.taxable || 0);
+  const totalTax     = +(row.tax || 0);
+  const total        = +((totalTaxable + totalTax).toFixed(2));
 
   const stateName = getStateName(row.state || '');
   // Detect inter-state vs intra-state from the state column.
@@ -1547,6 +1548,12 @@ function buildInvoiceHtml(row){
   const addrLine = row.address || '';
   const phone = row.contact || '';
 
+  // Unit Price on the invoice line should be per-unit.
+  // The CSV's Unit Price column is the order total, so derive per-unit by dividing.
+  const unitPriceDisplay = qty > 1
+    ? +((row.unitPrice || total) / qty).toFixed(2)
+    : (row.unitPrice || total);
+
   // Single line item (the CSV has one row per invoice)
   const itemRows = `
     <tr>
@@ -1556,7 +1563,7 @@ function buildInvoiceHtml(row){
         <div style="font-style:italic;font-size:10px;color:#8a6f55;margin-top:2px;">SKU ${escapeInvoiceHtml(row.sku || '')} · HSN 9403</div>
       </td>
       <td style="text-align:center;padding:11px 10px;font-size:11px;color:#3d2817;border-right:1px solid #e3cfa6;border-bottom:1px solid #e3cfa6;">${qty}</td>
-      <td style="text-align:right;padding:11px 10px;font-size:11px;color:#3d2817;font-variant-numeric:tabular-nums;border-right:1px solid #e3cfa6;border-bottom:1px solid #e3cfa6;">${invoiceFmt(row.unitPrice)}</td>
+      <td style="text-align:right;padding:11px 10px;font-size:11px;color:#3d2817;font-variant-numeric:tabular-nums;border-right:1px solid #e3cfa6;border-bottom:1px solid #e3cfa6;">${invoiceFmt(unitPriceDisplay)}</td>
       <td style="text-align:right;padding:11px 10px;font-size:11px;color:#3d2817;font-variant-numeric:tabular-nums;border-right:1px solid #e3cfa6;border-bottom:1px solid #e3cfa6;">${invoiceFmt(totalTaxable)}</td>
       <td style="text-align:right;padding:11px 10px;font-size:11px;color:#3d2817;font-variant-numeric:tabular-nums;border-bottom:1px solid #e3cfa6;">${invoiceFmt(total)}</td>
     </tr>`;
