@@ -12,6 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
   :root{
     --bg: #fafaf7;
@@ -1089,6 +1090,9 @@ function ingestInvoiceCsv(text){
   const stateIdx   = (cols['state'] || [])[0];
   const awbIdx     = (cols['awb'] || cols['tracking id'] || cols['waybill'] || [])[0];
   const promiseIdx = (cols['promise date'] || cols['promised date'] || [])[0];
+  // Optional columns appended at end — present only for SafeExpress orders
+  const dimensionsIdx = (cols['dimensions'] || [])[0];
+  const weightIdx     = (cols['weight'] || [])[0];
 
   // Multi-occurrence financial fields — read FIRST occurrence (the line-item value)
   // The CSV has:
@@ -1142,7 +1146,9 @@ function ingestInvoiceCsv(text){
     cgst: num(cell(r, cgstIdx)),
     state: cell(r, stateIdx),
     awb: cell(r, awbIdx).trim(),
-    promiseDate: cell(r, promiseIdx)
+    promiseDate: cell(r, promiseIdx),
+    dimensions: cell(r, dimensionsIdx),   // e.g. "190x90x25" — inches
+    weight: cell(r, weightIdx)            // e.g. "18" or "18 kg"
   })).filter(r => r.orderId);
 
   // Build lookup by Order ID. Duplicates collapse (multi-shipment) — keep first.
@@ -1446,6 +1452,24 @@ function isDPWorld(row){
   return courier.includes('dp world') || awb.startsWith('SP');
 }
 
+function isSafeExpress(row){
+  return (row.courier || '').toLowerCase().includes('safeexpress');
+}
+
+/* Format dimension string "190x90x25" or "190 x 90 x 25" → "190 × 90 × 25 inches" */
+function formatDimensions(raw){
+  if(!raw) return '';
+  const clean = String(raw).trim().replace(/\s*[xX×]\s*/g, ' × ');
+  return clean + ' inches';
+}
+
+/* Format weight "18" or "18 kg" or "18kg" → "18 kg" */
+function formatWeight(raw){
+  if(!raw) return '';
+  const n = String(raw).replace(/[^\d.]/g, '').trim();
+  return n ? n + ' kg' : '';
+}
+
 async function mergePdfs(byteArrays){
   const { PDFDocument } = PDFLib;
   const out = await PDFDocument.create();
@@ -1548,7 +1572,8 @@ function escapeInvoiceHtml(s){
 /* Build invoice HTML — same visual template as TrackLens/InvoLens.
  * Takes a QuickShip invoice row (from invoiceByOrderId).
  */
-function buildInvoiceHtml(row){
+/* opts.courier — string, e.g. "SafeExpress" — used to conditionally show dimensions/weight */
+function buildInvoiceHtml(row, opts = {}){
   // The Unit Price column in the CSV is GST-inclusive (e.g. 6599 for ₹5592.37 taxable + ₹1006.63 tax).
   // Total = unitPrice × qty. taxable and tax columns are per-unit values.
   const qty = row.qty || 1;
@@ -1571,6 +1596,40 @@ function buildInvoiceHtml(row){
   const igst = isInter ? totalTax : 0;
   const cgst = isInter ? 0 : +(totalTax / 2).toFixed(2);
   const sgst = isInter ? 0 : +(totalTax - cgst).toFixed(2);
+
+  // SafeExpress — show dimensions + weight block on invoice
+  const showDimsWeight = (opts.courier || '').toLowerCase().includes('safeexpress');
+  const dimsFormatted   = showDimsWeight ? formatDimensions(row.dimensions) : '';
+  const weightFormatted = showDimsWeight ? formatWeight(row.weight) : '';
+  const dimsWeightBlock = (showDimsWeight && (dimsFormatted || weightFormatted)) ? `
+    <div style="margin-top:6px;padding:8px 12px;background:#fdfbf7;border-left:3px solid #c89548;font-size:10.5px;border-radius:0 4px 4px 0;">
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.12em;color:#b88838;margin-bottom:4px;font-weight:700;">SHIPMENT DETAILS</div>
+      <div style="display:flex;gap:24px;">
+        ${dimsFormatted ? `<div><span style="color:#6b5340;font-weight:500;">Dimensions:</span> <strong style="color:#3d2817;">${escapeInvoiceHtml(dimsFormatted)}</strong></div>` : ''}
+        ${weightFormatted ? `<div><span style="color:#6b5340;font-weight:500;">Weight:</span> <strong style="color:#3d2817;">${escapeInvoiceHtml(weightFormatted)}</strong></div>` : ''}
+      </div>
+    </div>` : '';
+
+  // Barcode — Code 128, encodes invoice number, rendered as SVG via JsBarcode
+  // We generate an inline SVG string so html2canvas can capture it without
+  // needing a DOM element to be appended first.
+  let barcodeSvg = '';
+  const barcodeValue = String(invNo || row.orderId || '').trim();
+  if(barcodeValue && typeof JsBarcode !== 'undefined'){
+    try{
+      const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      JsBarcode(svgEl, barcodeValue, {
+        format: 'CODE128',
+        width: 1.4,
+        height: 36,
+        displayValue: false,
+        margin: 0,
+        background: 'transparent',
+        lineColor: '#3d2817'
+      });
+      barcodeSvg = svgEl.outerHTML;
+    } catch(e){ barcodeSvg = ''; }
+  }
 
   // Invoice number — strip leading platform prefix, use as-is if numeric
   const invNo = row.invoiceNo && /^\d+$/.test(String(row.invoiceNo).trim())
@@ -1661,6 +1720,7 @@ function buildInvoiceHtml(row){
               <div style="color:#6b5340;font-weight:500;">Seller GSTIN</div><div style="color:#b88838;">:</div><div style="color:#3d2817;font-weight:600;">${SELLER_INFO.gstin}</div>
               <div style="color:#6b5340;font-weight:500;">Place of Supply</div><div style="color:#b88838;">:</div><div style="color:#3d2817;font-weight:600;">${escapeInvoiceHtml(stateName)}</div>
             </div>
+            ${barcodeSvg ? `<div style="margin-top:8px;text-align:right;">${barcodeSvg}</div>` : ''}
           </div>
         </div>
 
@@ -1694,6 +1754,8 @@ function buildInvoiceHtml(row){
           </thead>
           <tbody>${itemRows}</tbody>
         </table>
+
+        ${dimsWeightBlock}
 
         <!-- Totals + Payment -->
         <div style="display:grid;grid-template-columns:1fr 0.85fr;gap:22px;margin-top:16px;">
@@ -1750,11 +1812,11 @@ function buildInvoiceHtml(row){
 }
 
 /* Generate a single invoice PDF using html2canvas + jsPDF. */
-async function generateInvoicePdf(row){
+async function generateInvoicePdf(row, opts = {}){
   if(typeof window.jspdf === 'undefined') throw new Error('jsPDF not loaded');
   if(typeof window.html2canvas === 'undefined') throw new Error('html2canvas not loaded');
 
-  const html = buildInvoiceHtml(row);
+  const html = buildInvoiceHtml(row, opts);
   const container = document.createElement('div');
   container.style.cssText = 'position:fixed;top:0;left:-99999px;z-index:-1;background:white;';
   container.innerHTML = html;
@@ -1957,17 +2019,17 @@ async function runDispatch(){
     seenOrderIds.add(row.orderId);
     const invRow = State.invoiceByOrderId[row.orderId];
     if(!invRow) continue;
-    invoiceQueue.push({ orderId: row.orderId, invRow });
+    invoiceQueue.push({ orderId: row.orderId, invRow, courier: row.courier || '' });
   }
   logProgress(`Generating ${invoiceQueue.length} invoices for unique orders…`);
 
   const invoiceBytes = [];
   const invoiceFailures = [];
   let invDone = 0;
-  for(const { orderId, invRow } of invoiceQueue){
+  for(const { orderId, invRow, courier } of invoiceQueue){
     setProgress(invDone, invoiceQueue.length, `Invoice for ${orderId}…`);
     try{
-      const bytes = await generateInvoicePdf(invRow);
+      const bytes = await generateInvoicePdf(invRow, { courier });
       invoiceBytes.push(bytes);
       logProgress(`✓ Invoice ${orderId}`, 'ok');
     } catch(err){
