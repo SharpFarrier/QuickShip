@@ -650,7 +650,7 @@
     <div id="invoiceStatus"></div>
     <!-- Invoice-only generate — visible as soon as invoice data is loaded,
          regardless of whether dispatch CSV is uploaded -->
-    <div id="invoiceOnlyRow" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+    <div id="invoiceOnlyRow" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
       <div style="font-size:12.5px;color:var(--ink-2);">
         <strong id="invoiceOnlyStat" style="font-family:'Fraunces',serif;font-size:18px;color:var(--ink);margin-right:6px;">0</strong>invoices ready · sorted by invoice date
       </div>
@@ -1174,6 +1174,7 @@ function refreshReview(){
   const step3 = $('#step3');
   if(State.dispatchRows.length === 0){
     step3.style.display = 'none';
+    refreshInvoiceOnlyRow();   // still update the Step 2 button even with no dispatch CSV
     return;
   }
   step3.style.display = '';
