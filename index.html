@@ -648,6 +648,14 @@
       </div>
     </div>
     <div id="invoiceStatus"></div>
+    <!-- Invoice-only generate — visible as soon as invoice data is loaded,
+         regardless of whether dispatch CSV is uploaded -->
+    <div id="invoiceOnlyRow" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+      <div style="font-size:12.5px;color:var(--ink-2);">
+        <strong id="invoiceOnlyStat" style="font-family:'Fraunces',serif;font-size:18px;color:var(--ink);margin-right:6px;">0</strong>invoices ready · sorted by invoice date
+      </div>
+      <button class="btn lg" id="generateInvoicesOnlyBtn" disabled>↓ Generate Invoices PDF</button>
+    </div>
   </section>
 
   <!-- STEP 3: Review + Generate -->
@@ -685,7 +693,10 @@
         <div class="stat"><strong id="statInvoices">0</strong>invoices to generate</div>
         <div class="stat warn"><strong id="statMissing">0</strong>missing invoice data</div>
       </div>
-      <button class="btn accent lg" id="generateBtn" disabled>Generate Dispatch</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+        <button class="btn ghost lg" id="generateInvoicesBtn" disabled>↓ Invoices Only</button>
+        <button class="btn accent lg" id="generateBtn" disabled>Generate Dispatch</button>
+      </div>
     </div>
 
     <div class="progress-block" id="progressBlock" style="display:none">
@@ -1221,10 +1232,33 @@ function refreshReview(){
     }
   });
 
-  // Generate button enabled if ANY rows have AWBs (labels are the must-have;
-  // invoices are best-effort — missing rows are skipped, label still fetched)
+  // Generate Dispatch button
   $('#generateBtn').disabled = rows.length === 0;
   $('#generateBtn').textContent = `Generate Dispatch (${rows.length} labels, ${uniqueOrders} invoices)`;
+
+  // Invoices Only button in Step 3
+  $('#generateInvoicesBtn').disabled = uniqueOrders === 0;
+  $('#generateInvoicesBtn').textContent = `↓ Invoices Only (${uniqueOrders})`;
+
+  // Step 2 invoice-only row — always update based on invoice data
+  refreshInvoiceOnlyRow();
+}
+
+/* Update the Step 2 "Generate Invoices PDF" row — shown whenever invoice data
+ * is loaded, regardless of whether dispatch CSV is present. */
+function refreshInvoiceOnlyRow(){
+  const row = $('#invoiceOnlyRow');
+  const btn = $('#generateInvoicesOnlyBtn');
+  const stat = $('#invoiceOnlyStat');
+  const count = Object.keys(State.invoiceByOrderId).length;
+  if(count === 0){
+    row.style.display = 'none';
+    return;
+  }
+  row.style.display = 'flex';
+  stat.textContent = count;
+  btn.disabled = false;
+  btn.textContent = `↓ Generate Invoices PDF (${count})`;
 }
 
 /* ------------------- Cargo API client (ported from TrackLens) ------------------- */
@@ -1769,6 +1803,87 @@ async function generateInvoicePdf(row){
   } finally {
     document.body.removeChild(container);
   }
+}
+
+/* ============================================================
+ * INVOICES-ONLY ENGINE
+ * Generates invoices for all rows in State.invoiceByOrderId,
+ * sorted by invoice date (ascending). No label fetch, no dispatch CSV needed.
+ * AWB field on each invoice is left blank.
+ * ============================================================ */
+
+async function runInvoicesOnly(){
+  const byOrderId = State.invoiceByOrderId;
+  const count = Object.keys(byOrderId).length;
+  if(count === 0){ toast('No invoice data loaded', 'error'); return; }
+
+  // Disable both invoice buttons for duration of run
+  const btnStep2 = $('#generateInvoicesOnlyBtn');
+  const btnStep3 = $('#generateInvoicesBtn');
+  if(btnStep2) btnStep2.disabled = true;
+  if(btnStep3) btnStep3.disabled = true;
+
+  // Show progress in the same progress block
+  $('#progressBlock').style.display = '';
+  $('#progressTitle').textContent = 'Generating invoices…';
+  $('#progressLog').innerHTML = '';
+  setProgress(0, count, 'Preparing…');
+  logProgress(`Generating ${count} invoices sorted by invoice date`);
+
+  // Sort by invoice date ascending — blank/unparseable dates go last
+  const rows = Object.values(byOrderId).slice().sort((a, b) => {
+    const da = a.invoiceDate || '9999';
+    const db = b.invoiceDate || '9999';
+    return da < db ? -1 : da > db ? 1 : 0;
+  });
+
+  // Blank out AWB for invoice-only mode — no dispatch context
+  const invoiceBytes = [];
+  const failures = [];
+  let done = 0;
+
+  for(const invRow of rows){
+    setProgress(done, count, `Invoice for ${invRow.orderId}…`);
+    try{
+      // Clone row and clear AWB so it doesn't render on the invoice
+      const rowForPdf = Object.assign({}, invRow, { awb: '' });
+      const bytes = await generateInvoicePdf(rowForPdf);
+      invoiceBytes.push(bytes);
+      logProgress(`✓ ${invRow.orderId} — ${invRow.consignee || ''}`, 'ok');
+    } catch(err){
+      failures.push({ orderId: invRow.orderId, error: err.message });
+      logProgress(`✗ ${invRow.orderId} — ${err.message}`, 'err');
+    }
+    done++;
+    setProgress(done, count);
+  }
+
+  if(invoiceBytes.length === 0){
+    setProgress(count, count, 'No invoices generated.');
+    toast('No invoices generated. Check console for errors.', 'error', 5000);
+    if(btnStep2) btnStep2.disabled = false;
+    if(btnStep3) btnStep3.disabled = false;
+    return;
+  }
+
+  // Merge and download
+  setProgress(count, count, 'Merging PDF…');
+  try{
+    const merged = await mergePdfs(invoiceBytes);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    triggerDownload(merged, `quickship_invoices_${dateStr}.pdf`);
+    logProgress('');
+    logProgress(`══ DONE ══`);
+    logProgress(`Generated: ${invoiceBytes.length} of ${count} invoices`);
+    if(failures.length) failures.forEach(f => logProgress(`  ✗ ${f.orderId}: ${f.error}`, 'err'));
+    toast(`${invoiceBytes.length} invoices downloaded`, 'success', 4000);
+  } catch(err){
+    logProgress(`✗ Merge failed: ${err.message}`, 'err');
+    toast('PDF merge failed: ' + err.message, 'error', 5000);
+  }
+
+  if(btnStep2) btnStep2.disabled = false;
+  if(btnStep3) btnStep3.disabled = false;
 }
 
 /* ============================================================
@@ -2479,6 +2594,7 @@ function bindAll(){
     $('#invoiceMeta').textContent = 'no file yet';
     $('#step2').classList.remove('done');
     $('#invoiceStatus').innerHTML = '';
+    refreshInvoiceOnlyRow();
     refreshReview();
   });
 
@@ -2496,8 +2612,10 @@ function bindAll(){
     });
   });
 
-  // Generate
+  // Generate buttons
   $('#generateBtn').addEventListener('click', runDispatch);
+  $('#generateInvoicesBtn').addEventListener('click', runInvoicesOnly);
+  $('#generateInvoicesOnlyBtn').addEventListener('click', runInvoicesOnly);
 
   // Drive + Settings — landing buttons + top-bar
   $('#landingConnectBtn').addEventListener('click', ensureDrive);
