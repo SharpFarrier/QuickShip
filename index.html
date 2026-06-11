@@ -1610,9 +1610,14 @@ function buildInvoiceHtml(row, opts = {}){
       </div>
     </div>` : '';
 
-  // Barcode — Code 128, encodes invoice number, rendered as SVG via JsBarcode
-  // We generate an inline SVG string so html2canvas can capture it without
-  // needing a DOM element to be appended first.
+  // Invoice number — strip leading platform prefix, use as-is if numeric
+  const invNo = row.invoiceNo && /^\d+$/.test(String(row.invoiceNo).trim())
+    ? String(row.invoiceNo).trim()
+    : (row.orderId || row.invoiceNo || '');
+
+  const invDate = invoiceFmtDate(row.invoiceDate || new Date().toISOString().slice(0,10));
+
+  // Barcode — Code 128, encodes invoice number. Generated AFTER invNo is declared.
   let barcodeSvg = '';
   const barcodeValue = String(invNo || row.orderId || '').trim();
   if(barcodeValue && typeof JsBarcode !== 'undefined'){
@@ -1630,13 +1635,6 @@ function buildInvoiceHtml(row, opts = {}){
       barcodeSvg = svgEl.outerHTML;
     } catch(e){ barcodeSvg = ''; }
   }
-
-  // Invoice number — strip leading platform prefix, use as-is if numeric
-  const invNo = row.invoiceNo && /^\d+$/.test(String(row.invoiceNo).trim())
-    ? String(row.invoiceNo).trim()
-    : (row.orderId || row.invoiceNo || '');
-
-  const invDate = invoiceFmtDate(row.invoiceDate || new Date().toISOString().slice(0,10));
 
   // Address is one long string in the CSV — render as-is
   const addrLine = row.address || '';
