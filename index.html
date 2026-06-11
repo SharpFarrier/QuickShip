@@ -1816,7 +1816,12 @@ async function generateInvoicePdf(row, opts = {}){
   if(typeof window.jspdf === 'undefined') throw new Error('jsPDF not loaded');
   if(typeof window.html2canvas === 'undefined') throw new Error('html2canvas not loaded');
 
-  const html = buildInvoiceHtml(row, opts);
+  let html;
+  try{
+    html = buildInvoiceHtml(row, opts);
+  } catch(e){
+    throw new Error('Invoice HTML build failed: ' + e.message);
+  }
   const container = document.createElement('div');
   container.style.cssText = 'position:fixed;top:0;left:-99999px;z-index:-1;background:white;';
   container.innerHTML = html;
@@ -1880,6 +1885,14 @@ async function runInvoicesOnly(){
   const count = Object.keys(byOrderId).length;
   if(count === 0){ toast('No invoice data loaded', 'error'); return; }
 
+  // Wait for required libraries
+  if(typeof window.jspdf === 'undefined'){
+    toast('PDF library still loading — try again in a moment', 'error', 4000); return;
+  }
+  if(typeof window.html2canvas === 'undefined'){
+    toast('html2canvas still loading — try again in a moment', 'error', 4000); return;
+  }
+
   // Disable both invoice buttons for duration of run
   const btnStep2 = $('#generateInvoicesOnlyBtn');
   const btnStep3 = $('#generateInvoicesBtn');
@@ -1916,6 +1929,7 @@ async function runInvoicesOnly(){
     } catch(err){
       failures.push({ orderId: invRow.orderId, error: err.message });
       logProgress(`✗ ${invRow.orderId} — ${err.message}`, 'err');
+      console.error('[QuickShip] Invoice generation failed for', invRow.orderId, err);
     }
     done++;
     setProgress(done, count);
