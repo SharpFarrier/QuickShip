@@ -1000,16 +1000,17 @@ function ingestDispatchCsv(text){
     return;
   }
   // Tolerate "Dispatch by Date" AND the typo "Dispathc by Date"
+  // Also accepts DispatchLens export headers: Order ID, Customer, Dispatch By, Decision
   const orderIdKey   = pickHeader(header, ['order id', 'order no', 'order number']);
-  const orderDateKey = pickHeader(header, ['order date']);
-  const dispDateKey  = pickHeader(header, ['dispatch by date', 'dispathc by date', 'dispatch date']);
+  const orderDateKey = pickHeader(header, ['order date', 'promise']);
+  const dispDateKey  = pickHeader(header, ['dispatch by date', 'dispathc by date', 'dispatch date', 'dispatch by']);
   const nameKey      = pickHeader(header, ['name', 'customer', 'consignee']);
   const qtyKey       = pickHeader(header, ['qty', 'quantity']);
   const courierKey   = pickHeader(header, ['courier']);
   const lrKey        = pickHeader(header, ['lr no', 'lr number', 'lr']);
   const awbKey       = pickHeader(header, ['tracking id', 'awb', 'awb no', 'waybill']);
   const skuKey       = pickHeader(header, ['sku']);
-  const statusKey    = pickHeader(header, ['dispatch status', 'status']);
+  const statusKey    = pickHeader(header, ['dispatch status', 'status', 'decision']);
 
   if(!orderIdKey){
     setStatus('#dispatchStatus', 'err', 'Could not find Order Id column. Got: ' + header.join(', '));
@@ -1450,6 +1451,23 @@ function isDPWorld(row){
   const courier = (row.courier || '').toLowerCase();
   const awb = (row.awb || '').toUpperCase();
   return courier.includes('dp world') || awb.startsWith('SP');
+}
+
+/* Bluedart labels can't be fetched via the Cargo API (confirmed by Bluedart).
+ * Detect by courier name or AWB prefix so we can skip them in label generation. */
+function isBluedart(row){
+  const courier = (row.courier || '').toLowerCase();
+  const awb = String(row.awb || '');
+  // Bluedart AWBs in DispatchLens: 5093xxxxx, 6850xxxxx (11 digits, no 2089 Cargo prefix)
+  return courier.includes('bluedart') || courier === 'bd'
+      || /^(509|685)\d/.test(awb);
+}
+
+/* A row is fetchable via Cargo only if it's Delhivery/DP World/Cargo (AWB starts 2089)
+ * or DP World (SP prefix). Bluedart is not fetchable. */
+function isCargoFetchable(row){
+  if(isBluedart(row)) return false;
+  return true;
 }
 
 function isSafeExpress(row){
@@ -1983,8 +2001,17 @@ async function runDispatch(){
   // Phase 1: Fetch labels
   const labelBytes = [];           // [{ row, bytes }] in display order
   const labelFailures = [];
+  const skippedRows = [];          // non-Cargo couriers (e.g. Bluedart) — can't fetch via API
   let done = 0;
   for(const r of rows){
+    // Auto-skip couriers whose labels can't be fetched via Cargo (Bluedart)
+    if(!isCargoFetchable(r)){
+      skippedRows.push(r);
+      logProgress(`⊘ Skipped ${r.awb} (${r.courier || 'non-Cargo'}) — label not available via API`, 'warn');
+      done++;
+      setProgress(done, rows.length);
+      continue;
+    }
     setProgress(done, rows.length, `Fetching label for ${r.orderId} (${r.awb})…`);
     try{
       const result = await cargoFetchLabelBytes(r.awb);
@@ -2074,6 +2101,7 @@ async function runDispatch(){
   logProgress('', 'info');
   logProgress(`══ SUMMARY ══`);
   logProgress(`Labels:    ${labelBytes.length} of ${rows.length} fetched (${labelFailures.length} failed)`);
+  if(skippedRows.length) logProgress(`Skipped:   ${skippedRows.length} non-Cargo rows (Bluedart — label not available via API)`, 'warn');
   logProgress(`Invoices:  ${invoiceBytes.length} of ${invoiceQueue.length} generated (${invoiceFailures.length} failed)`);
   const missingInvoice = rows.length - seenOrderIds.size;
   if(missingInvoice > 0) logProgress(`Skipped:   ${missingInvoice} rows had no invoice data`, 'warn');
